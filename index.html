@@ -4,167 +4,200 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Azure VM Optimizer</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☁️</text></svg>"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☁</text></svg>"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;color:#111827}
 input,textarea,button{font-family:inherit;outline:none}
-::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .pulse{animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.tab-btn{padding:7px 16px;border-radius:7px;border:none;cursor:pointer;font-weight:600;font-size:12px;transition:all .15s}
-.tab-btn.active{background:#2563eb;color:white}
-.tab-btn:not(.active){background:transparent;color:#6b7280}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.tabbtn{padding:7px 15px;border-radius:7px;border:none;cursor:pointer;font-weight:600;font-size:12px;background:transparent;color:#6b7280}
+.tabbtn.on{background:#2563eb;color:white}
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="root"></div>
 <script>
-// ── Config — UPDATE THESE ──────────────────────────────────
-const CONFIG = {
-  tenantId: 'YOUR_TENANT_ID',
-  clientId: 'YOUR_CLIENT_ID',
-};
-// ──────────────────────────────────────────────────────────
+// =============================================================
+// CONFIG -- replace with your values
+// =============================================================
+var TENANT = 'YOUR_TENANT_ID';
+var CLIENT = 'YOUR_CLIENT_ID';
+// =============================================================
 
-const MGMT = 'https://management.azure.com';
-const VM_CATALOG = {
+var MGMT = 'https://management.azure.com';
+
+var CAT = {
   'Standard_B1s':{v:1,r:1,c:0.011},'Standard_B2ms':{v:2,r:8,c:0.083},
   'Standard_B4ms':{v:4,r:16,c:0.166},'Standard_B8ms':{v:8,r:32,c:0.333},
   'Standard_D2s_v3':{v:2,r:8,c:0.096},'Standard_D4s_v3':{v:4,r:16,c:0.192},
   'Standard_D8s_v3':{v:8,r:32,c:0.384},'Standard_D2s_v5':{v:2,r:8,c:0.096},
   'Standard_D4s_v5':{v:4,r:16,c:0.192},'Standard_D8s_v5':{v:8,r:32,c:0.384},
-  'Standard_D16s_v5':{v:16,r:64,c:0.768},'Standard_D2ads_v5':{v:2,r:8,c:0.096},
-  'Standard_D4ads_v5':{v:4,r:16,c:0.192},'Standard_D8ads_v5':{v:8,r:32,c:0.384},
-  'Standard_D16ads_v5':{v:16,r:64,c:0.768},'Standard_D32ads_v5':{v:32,r:128,c:1.536},
+  'Standard_D16s_v5':{v:16,r:64,c:0.768},
+  'Standard_D2ads_v5':{v:2,r:8,c:0.096},'Standard_D4ads_v5':{v:4,r:16,c:0.192},
+  'Standard_D8ads_v5':{v:8,r:32,c:0.384},'Standard_D16ads_v5':{v:16,r:64,c:0.768},
+  'Standard_D32ads_v5':{v:32,r:128,c:1.536},
   'Standard_E2s_v3':{v:2,r:16,c:0.126},'Standard_E4s_v3':{v:4,r:32,c:0.252},
   'Standard_E8s_v3':{v:8,r:64,c:0.504},'Standard_E16s_v3':{v:16,r:128,c:1.008},
   'Standard_E2ads_v5':{v:2,r:16,c:0.126},'Standard_E4ads_v5':{v:4,r:32,c:0.252},
   'Standard_E8ads_v5':{v:8,r:64,c:0.504},'Standard_E16ads_v5':{v:16,r:128,c:1.008},
   'Standard_F2s_v2':{v:2,r:4,c:0.085},'Standard_F4s_v2':{v:4,r:8,c:0.170},
-  'Standard_F8s_v2':{v:8,r:16,c:0.338},'Standard_F16s_v2':{v:16,r:32,c:0.676},
+  'Standard_F8s_v2':{v:8,r:16,c:0.338},'Standard_F16s_v2':{v:16,r:32,c:0.676}
 };
-const SEV={
-  critical:{bg:'#fef2f2',bd:'#fca5a5',tx:'#dc2626',lbl:'CRITICAL'},
-  high:    {bg:'#fff7ed',bd:'#fdba74',tx:'#ea580c',lbl:'HIGH'},
-  medium:  {bg:'#fffbeb',bd:'#fcd34d',tx:'#d97706',lbl:'MEDIUM'},
-  low:     {bg:'#eff6ff',bd:'#93c5fd',tx:'#2563eb',lbl:'LOW'},
-  info:    {bg:'#f5f3ff',bd:'#c4b5fd',tx:'#7c3aed',lbl:'INFO'},
+
+var SEV = {
+  critical:{bg:'#fef2f2',bd:'#fca5a5',tx:'#dc2626',lb:'CRITICAL'},
+  high:    {bg:'#fff7ed',bd:'#fdba74',tx:'#ea580c',lb:'HIGH'},
+  medium:  {bg:'#fffbeb',bd:'#fcd34d',tx:'#d97706',lb:'MEDIUM'},
+  low:     {bg:'#eff6ff',bd:'#93c5fd',tx:'#2563eb',lb:'LOW'},
+  info:    {bg:'#f5f3ff',bd:'#c4b5fd',tx:'#7c3aed',lb:'INFO'}
 };
-const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
-const sum=a=>a.reduce((x,y)=>x+y,0);
-const r2=v=>Math.round(v*100)/100;
-const r1=v=>Math.round(v*10)/10;
-const pct=(a,p)=>{if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);return s[Math.floor(p/100*s.length)]||0;};
-const scC=s=>s>=80?'#16a34a':s>=60?'#d97706':'#dc2626';
-const scBg=s=>s>=80?'#f0fdf4':s>=60?'#fffbeb':'#fef2f2';
-const $=id=>document.getElementById(id);
 
-// ── PKCE ──────────────────────────────────────────────────
-const genVerifier=()=>{const a=new Uint8Array(32);crypto.getRandomValues(a);return btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');};
-const genChallenge=async v=>{const e=new TextEncoder().encode(v);const h=await crypto.subtle.digest('SHA-256',e);return btoa(String.fromCharCode(...new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');};
+// helpers
+function avg(a){return a.length?a.reduce(function(x,y){return x+y;},0)/a.length:0;}
+function sumArr(a){return a.reduce(function(x,y){return x+y;},0);}
+function r2(v){return Math.round(v*100)/100;}
+function r1(v){return Math.round(v*10)/10;}
+function pctile(a,p){if(!a.length)return 0;var s=a.slice().sort(function(x,y){return x-y;});return s[Math.floor(p/100*s.length)]||0;}
+function scC(s){return s>=80?'#16a34a':s>=60?'#d97706':'#dc2626';}
+function scBg(s){return s>=80?'#f0fdf4':s>=60?'#fffbeb':'#fef2f2';}
 
-// ── State ─────────────────────────────────────────────────
-var S={
-  phase:'auth',token:null,
-  subs:[],selSub:null,rgs:[],selRG:null,vms:[],selVM:null,
-  vmDetail:null,metrics:null,report:null,
-  tab:'overview',busy:false,err:null,subQ:''
+// state
+var S = {
+  phase:'auth', token:null,
+  subs:[], selSub:null, rgs:[], selRG:null, vms:[], selVM:null,
+  vmDetail:null, metrics:null, report:null,
+  tab:'overview', busy:false, err:null, subQ:''
 };
-function setState(p){Object.assign(S,p);render();}
+function set(p){Object.assign(S,p);draw();}
 
-// ── Azure API ─────────────────────────────────────────────
-async function az(url,tok){
-  var r=await fetch(url,{headers:{Authorization:'Bearer '+(tok||S.token)}});
-  if(!r.ok){var t=await r.text();throw new Error('Azure '+r.status+': '+t.slice(0,300));}
-  return r.json();
-}
-
-// ── PKCE Login ────────────────────────────────────────────
-async function startLogin(){
-  var verifier=genVerifier(),challenge=await genChallenge(verifier);
-  var redirect=location.href.split('?')[0].split('#')[0];
-  sessionStorage.setItem('pkce_v',verifier);
-  sessionStorage.setItem('pkce_r',redirect);
-  var params=new URLSearchParams({
-    client_id:CONFIG.clientId,response_type:'code',redirect_uri:redirect,
-    scope:'https://management.azure.com/user_impersonation offline_access',
-    code_challenge:challenge,code_challenge_method:'S256',response_mode:'query'
+// azure fetch
+function azGet(url) {
+  return fetch(url,{headers:{Authorization:'Bearer '+S.token}}).then(function(r){
+    if(!r.ok){return r.text().then(function(t){throw new Error('Azure '+r.status+': '+t.slice(0,200));});}
+    return r.json();
   });
-  location.href='https://login.microsoftonline.com/'+CONFIG.tenantId+'/oauth2/v2.0/authorize?'+params;
 }
 
-async function handleCallback(){
-  var p=new URLSearchParams(location.search);
-  var code=p.get('code'),errP=p.get('error');
-  if(errP){setState({err:p.get('error_description')||errP,phase:'auth'});return;}
-  if(!code)return;
-  var verifier=sessionStorage.getItem('pkce_v');
-  var redirect=sessionStorage.getItem('pkce_r');
-  sessionStorage.removeItem('pkce_v');sessionStorage.removeItem('pkce_r');
-  history.replaceState({},'',location.pathname);
-  setState({busy:true,phase:'auth'});
-  try{
-    var r=await fetch('https://login.microsoftonline.com/'+CONFIG.tenantId+'/oauth2/v2.0/token',{
-      method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:new URLSearchParams({client_id:CONFIG.clientId,code:code,redirect_uri:redirect,
-        grant_type:'authorization_code',code_verifier:verifier})
+// PKCE
+function genV(){var a=new Uint8Array(32);crypto.getRandomValues(a);return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
+function genC(v){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)).then(function(h){return btoa(String.fromCharCode.apply(null,new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');});}
+
+function startLogin(){
+  var v=genV();
+  genC(v).then(function(ch){
+    var red=location.href.split('?')[0].split('#')[0];
+    sessionStorage.setItem('pv',v);
+    sessionStorage.setItem('pr',red);
+    var p=new URLSearchParams({
+      client_id:CLIENT,response_type:'code',redirect_uri:red,
+      scope:'https://management.azure.com/user_impersonation offline_access',
+      code_challenge:ch,code_challenge_method:'S256',response_mode:'query'
     });
-    var d=await r.json();
-    if(!d.access_token)throw new Error(d.error_description||d.error||'Token exchange failed');
-    var subs=await az(MGMT+'/subscriptions?api-version=2022-12-01',d.access_token);
-    setState({token:d.access_token,subs:subs.value||[],phase:'browse',busy:false,err:null});
-  }catch(e){setState({err:e.message,phase:'auth',busy:false});}
+    location.href='https://login.microsoftonline.com/'+TENANT+'/oauth2/v2.0/authorize?'+p;
+  });
 }
 
-// ── Metrics ───────────────────────────────────────────────
-async function fetchMetrics(vmId,token){
-  var end=new Date().toISOString(),start=new Date(Date.now()-7*24*3600*1000).toISOString(),ts=start+'/'+end;
-  var batches=[['Percentage CPU'],['Network In Total','Network Out Total'],['Network In','Network Out'],
-    ['Disk Read Bytes/sec','Disk Write Bytes/sec'],['Disk Read Bytes','Disk Write Bytes'],
+function handleCB(){
+  var p=new URLSearchParams(location.search);
+  var code=p.get('code');
+  if(p.get('error')){set({err:p.get('error_description')||p.get('error'),phase:'auth'});return;}
+  if(!code)return;
+  var v=sessionStorage.getItem('pv');
+  var red=sessionStorage.getItem('pr');
+  sessionStorage.removeItem('pv');sessionStorage.removeItem('pr');
+  history.replaceState({},'',location.pathname);
+  set({busy:true,phase:'auth'});
+  fetch('https://login.microsoftonline.com/'+TENANT+'/oauth2/v2.0/token',{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({client_id:CLIENT,code:code,redirect_uri:red,grant_type:'authorization_code',code_verifier:v})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(!d.access_token){throw new Error(d.error_description||d.error||'Token exchange failed');}
+    S.token=d.access_token;
+    return azGet(MGMT+'/subscriptions?api-version=2022-12-01');
+  }).then(function(s){
+    set({subs:s.value||[],phase:'browse',busy:false,err:null});
+  }).catch(function(e){set({err:e.message,phase:'auth',busy:false});});
+}
+
+// metrics
+function fetchMetrics(vmId){
+  var end=new Date().toISOString();
+  var start=new Date(Date.now()-7*24*3600*1000).toISOString();
+  var ts=start+'/'+end;
+  var batches=[
+    ['Percentage CPU'],
+    ['Network In Total','Network Out Total'],
+    ['Network In','Network Out'],
+    ['Disk Read Bytes/sec','Disk Write Bytes/sec'],
+    ['Disk Read Bytes','Disk Write Bytes'],
     ['Disk Read Operations/Sec','Disk Write Operations/Sec'],
     ['OS Disk Read Bytes/sec','OS Disk Write Bytes/sec'],
     ['OS Disk Read Operations/Sec','OS Disk Write Operations/Sec'],
     ['Data Disk Read Bytes/sec','Data Disk Write Bytes/sec'],
-    ['Data Disk Read Operations/Sec','Data Disk Write Operations/Sec']];
-  var all=[],seen=new Set();
-  for(var i=0;i<batches.length;i++){
-    var batch=batches[i];
-    var key=batch[0].toLowerCase().replace(/\s|\/sec|total|bytes/g,'');
-    if(seen.has(key))continue;
-    try{
-      var r=await az(MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01&timespan='+ts+'&interval=PT1H&metricnames='+encodeURIComponent(batch.join(','))+'&aggregation=Average,Maximum,Minimum',token);
-      var valid=(r.value||[]).filter(function(m){return m.timeseries&&m.timeseries[0]&&m.timeseries[0].data&&m.timeseries[0].data.some(function(d){return d.average!=null;});});
-      if(valid.length>0){valid.forEach(function(v){all.push(v);});seen.add(key);}
-    }catch(e){}
-  }
-  var memMetric=null;
-  try{var m=await az(MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01&timespan='+ts+'&interval=PT1H&metricnames=Available%20Memory%20Bytes&aggregation=Average',token);memMetric=m.value&&m.value[0];}catch(e){}
-  return{all:all,memMetric:memMetric};
+    ['Data Disk Read Operations/Sec','Data Disk Write Operations/Sec']
+  ];
+  var all=[];
+  var seen={};
+  var chain=Promise.resolve();
+  batches.forEach(function(batch){
+    var key=batch[0].toLowerCase().replace(/[\s/]/g,'').replace('sec','').replace('total','').replace('bytes','');
+    if(seen[key])return;
+    chain=chain.then(function(){
+      return azGet(
+        MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
+        '&timespan='+ts+'&interval=PT1H' +
+        '&metricnames='+encodeURIComponent(batch.join(',')) +
+        '&aggregation=Average,Maximum,Minimum'
+      ).then(function(r){
+        var valid=(r.value||[]).filter(function(m){
+          return m.timeseries&&m.timeseries[0]&&m.timeseries[0].data&&
+            m.timeseries[0].data.some(function(d){return d.average!=null;});
+        });
+        if(valid.length){valid.forEach(function(v){all.push(v);});seen[key]=1;}
+      }).catch(function(){});
+    });
+  });
+  return chain.then(function(){
+    return azGet(
+      MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
+      '&timespan='+ts+'&interval=PT1H' +
+      '&metricnames=Available%20Memory%20Bytes&aggregation=Average'
+    ).then(function(r){return {all:all,mem:r.value&&r.value[0]||null};})
+     .catch(function(){return {all:all,mem:null};});
+  });
 }
 
-function processMetrics(vals,memMetric,detail){
+function procMetrics(vals,memM,detail){
   function gm(){
     for(var i=0;i<arguments.length;i++){
       var n=arguments[i];
-      var f=vals.find(function(m){return m.name.value===n||m.name.localizedValue===n;});
-      if(f)return f;
+      for(var j=0;j<vals.length;j++){
+        if(vals[j].name.value===n||vals[j].name.localizedValue===n)return vals[j];
+      }
     }
     return null;
   }
   function pts(m){return m&&m.timeseries&&m.timeseries[0]&&m.timeseries[0].data||[];}
   function avgs(m){return pts(m).map(function(d){return d.average;}).filter(function(v){return v!=null;});}
   function maxs(m){return pts(m).map(function(d){return d.maximum||d.average||0;});}
+
   var cpu=gm('Percentage CPU');
-  var ca=avgs(cpu),cm=maxs(cpu);
-  var cpuAvg=r1(avg(ca)),cpuMax=r1(cm.length?Math.max.apply(null,[0].concat(cm)):0);
-  var cpuMin=r1(ca.filter(function(v){return v>0;}).length?Math.min.apply(null,ca.filter(function(v){return v>0;})):0);
-  var cpuP95=r1(pct(ca,95));
-  var vmSize=detail.properties&&detail.properties.hardwareProfile&&detail.properties.hardwareProfile.vmSize;
-  var si=VM_CATALOG[vmSize]||{v:2,r:8,c:0.096};
+  var ca=avgs(cpu);
+  var cm=maxs(cpu);
+  var cpuAvg=r1(avg(ca));
+  var cpuMax=r1(cm.length?Math.max.apply(null,cm):0);
+  var ca2=ca.filter(function(v){return v>0;});
+  var cpuMin=r1(ca2.length?Math.min.apply(null,ca2):0);
+  var cpuP95=r1(pctile(ca,95));
+  var vmSize=detail.properties&&detail.properties.hardwareProfile&&detail.properties.hardwareProfile.vmSize||'Unknown';
+  var si=CAT[vmSize]||{v:2,r:8,c:0.096};
   var memPct=null;
-  if(memMetric){var a=avg(avgs(memMetric));if(a>0)memPct=r1(((si.r*1073741824-a)/(si.r*1073741824))*100);}
+  if(memM){var ma=avg(avgs(memM));if(ma>0)memPct=r1(((si.r*1073741824-ma)/(si.r*1073741824))*100);}
+
   var diskR=gm('Disk Read Bytes/sec','Disk Read Bytes','OS Disk Read Bytes/sec');
   var diskW=gm('Disk Write Bytes/sec','Disk Write Bytes','OS Disk Write Bytes/sec');
   var diskRO=gm('Disk Read Operations/Sec','OS Disk Read Operations/Sec');
@@ -177,7 +210,8 @@ function processMetrics(vals,memMetric,detail){
   var netOut=gm('Network Out Total','Network Out');
   var MB=1048576;
   function mk(m,d){d=d||1;var a=avgs(m);return r2(a.length?avg(a)/d:0);}
-  function mx(m,d){d=d||1;var a=avgs(m);return r2(a.length?Math.max.apply(null,[0].concat(a))/d:0);}
+  function mx(m,d){d=d||1;var a=avgs(m);return r2(a.length?Math.max.apply(null,a)/d:0);}
+
   var dm={};
   pts(cpu).forEach(function(d){
     if(d.average==null)return;
@@ -185,434 +219,558 @@ function processMetrics(vals,memMetric,detail){
     if(!dm[day])dm[day]=[];
     dm[day].push(d.average);
   });
-  var chartData=Object.keys(dm).map(function(day){
+  var chart=Object.keys(dm).map(function(day){
     var c=dm[day];
     return{date:day.slice(5),avgCPU:r1(avg(c)),maxCPU:r1(Math.max.apply(null,c))};
   });
-  return{vmSize:vmSize,si:si,cpuAvg:cpuAvg,cpuMax:cpuMax,cpuMin:cpuMin,cpuP95:cpuP95,memPct:memPct,
+
+  return{
+    vmSize:vmSize,si:si,
+    cpuAvg:cpuAvg,cpuMax:cpuMax,cpuMin:cpuMin,cpuP95:cpuP95,memPct:memPct,
     avgDiskR:mk(diskR,MB),avgDiskW:mk(diskW,MB),
     avgROps:Math.round(mk(diskRO)),avgWOps:Math.round(mk(diskWO)),
     maxROps:Math.round(mx(diskRO)),maxWOps:Math.round(mx(diskWO)),
     avgDdR:mk(ddR,MB),avgDdW:mk(ddW,MB),
     avgDdROps:Math.round(mk(ddRO)),avgDdWOps:Math.round(mk(ddWO)),
-    totIn:r2(sum(avgs(netIn))/1073741824),totOut:r2(sum(avgs(netOut))/1073741824),
-    chartData:chartData};
+    totIn:r2(sumArr(avgs(netIn))/1073741824),
+    totOut:r2(sumArr(avgs(netOut))/1073741824),
+    chart:chart
+  };
 }
 
 function buildReport(m,detail){
-  var recs=[];var score=100;
-  if(m.cpuAvg<5){score-=35;recs.push({sev:'critical',cat:'Cost/Right-Sizing',icon:'!',title:'Severely underutilized CPU',detail:'Avg CPU only '+m.cpuAvg+'% over 7 days.',action:'Downsize or deallocate.',savings:'Up to 70-80% cost reduction'});}
-  else if(m.cpuAvg<20&&m.cpuMax<60){score-=20;recs.push({sev:'high',cat:'Cost/Right-Sizing',icon:'!',title:'CPU over-provisioned',detail:'Avg: '+m.cpuAvg+'%, peak: '+m.cpuMax+'%.',action:'Consider halving vCPU count.',savings:'30-50% cost reduction'});}
-  else if(m.cpuAvg>85||m.cpuMax>95){score-=25;recs.push({sev:'critical',cat:'Performance',icon:'!',title:'CPU saturation',detail:'Avg: '+m.cpuAvg+'%, peak: '+m.cpuMax+'%, p95: '+m.cpuP95+'%.',action:'Scale up or enable Autoscale.',savings:'N/A'});}
-  else if(m.cpuAvg>70){score-=10;recs.push({sev:'medium',cat:'Performance',icon:'!',title:'Elevated CPU',detail:'Avg '+m.cpuAvg+'%.',action:'Plan scale-up.',savings:'Preventive'});}
+  var recs=[];
+  var score=100;
+
+  if(m.cpuAvg<5){
+    score-=35;
+    recs.push({sev:'critical',cat:'Cost',title:'Severely underutilized CPU',detail:'Avg CPU only '+m.cpuAvg+'% over 7 days.',action:'Downsize or deallocate.',savings:'Up to 70-80% cost reduction'});
+  } else if(m.cpuAvg<20&&m.cpuMax<60){
+    score-=20;
+    recs.push({sev:'high',cat:'Cost',title:'CPU over-provisioned',detail:'Avg: '+m.cpuAvg+'%, peak: '+m.cpuMax+'%.',action:'Consider halving vCPU count.',savings:'30-50% cost reduction'});
+  } else if(m.cpuAvg>85||m.cpuMax>95){
+    score-=25;
+    recs.push({sev:'critical',cat:'Performance',title:'CPU saturation',detail:'Avg: '+m.cpuAvg+'%, peak: '+m.cpuMax+'%.',action:'Scale up or enable Autoscale.',savings:'N/A'});
+  } else if(m.cpuAvg>70){
+    score-=10;
+    recs.push({sev:'medium',cat:'Performance',title:'Elevated CPU',detail:'Avg '+m.cpuAvg+'%.',action:'Plan scale-up.',savings:'Preventive'});
+  }
+
   if(m.memPct!==null){
-    if(m.memPct>85){score-=20;recs.push({sev:'critical',cat:'Memory',icon:'!',title:'High memory pressure',detail:m.memPct+'% used.',action:'Upgrade to E-series SKU.',savings:'N/A'});}
-    else if(m.memPct<20){score-=10;recs.push({sev:'medium',cat:'Memory',icon:'!',title:'Low memory utilization',detail:'Only '+m.memPct+'% used.',action:'Move to smaller RAM SKU.',savings:'15-30% cost reduction'});}
+    if(m.memPct>85){
+      score-=20;
+      recs.push({sev:'critical',cat:'Memory',title:'High memory pressure',detail:m.memPct+'% used.',action:'Upgrade to E-series SKU.',savings:'N/A'});
+    } else if(m.memPct<20){
+      score-=10;
+      recs.push({sev:'medium',cat:'Memory',title:'Low memory utilization',detail:'Only '+m.memPct+'% used.',action:'Move to smaller RAM SKU.',savings:'15-30% cost reduction'});
+    }
   }
-  if(m.avgROps<1&&m.avgWOps<1&&m.avgDiskR<0.1&&m.avgDiskW<0.1){score-=5;recs.push({sev:'low',cat:'Storage',icon:'i',title:'Negligible OS disk I/O',detail:'Read: '+m.avgDiskR+' MB/s, Write: '+m.avgDiskW+' MB/s.',action:'Downgrade to Standard SSD.',savings:'$15-30/month'});}
-  else if(m.maxROps>5000||m.maxWOps>5000){score-=10;recs.push({sev:'medium',cat:'Storage',icon:'!',title:'Peak IOPS are high',detail:'Peak Read: '+m.maxROps+', Write: '+m.maxWOps+'.',action:'Ensure Premium SSD or Ultra Disk.',savings:'Performance'});}
-  if(m.avgDdROps<5&&m.avgDdWOps<5&&(m.avgDdR>0||m.avgDdW>0)){recs.push({sev:'low',cat:'Storage',icon:'i',title:'Data disk low IOPS',detail:'Read: '+m.avgDdROps+', Write: '+m.avgDdWOps+' IOPS.',action:'Move to Standard HDD/SSD.',savings:'Up to 60% disk saving'});}
-  var rs=rightSize(m);
-  if(rs&&rs.size!==m.vmSize){var cur=m.si.c,nc=(VM_CATALOG[rs.size]&&VM_CATALOG[rs.size].c)||cur;if(nc<cur){var sp=Math.round((cur-nc)/cur*100),sm2=Math.round((cur-nc)*730);recs.push({sev:'high',cat:'Right-Sizing',icon:'  recs.push({sev:'info',cat:'Cost',icon:'i',title:'Consider Reserved Instances',detail:'1 or 3-year reservations unlock major discounts.',action:'Azure Portal -> Reservations.',savings:'Up to 40-72% vs PAYG'});
-  recs.push({sev:'info',cat:'Governance',icon:'i',title:'Enable auto-shutdown',detail:'Reduces idle costs for non-prod VMs.',action:'Azure Portal -> VM -> Auto-shutdown.',savings:'Up to 60%'});
-  var tags=detail.tags||{},missing=['Environment','Owner','CostCenter','Application'].filter(function(t){return !tags[t];});
-  if(missing.length){score-=5;recs.push({sev:'low',cat:'Governance',icon:'i',title:'Missing tags: '+missing.join(', '),detail:'Untagged resources make cost attribution difficult.',action:'Add standard tags.',savings:'Better governance'});}
-  recs.push({sev:'info',cat:'Tooling',icon:'i',title:'Enable Azure Advisor',detail:'Continuously surfaces recommendations.',action:'Navigate to Azure Advisor.',savings:'Ongoing'});
+
+  if(m.avgROps<1&&m.avgWOps<1&&m.avgDiskR<0.1&&m.avgDiskW<0.1){
+    score-=5;
+    recs.push({sev:'low',cat:'Storage',title:'Negligible OS disk I/O',detail:'Read: '+m.avgDiskR+' MB/s, Write: '+m.avgDiskW+' MB/s.',action:'Downgrade to Standard SSD.',savings:'$15-30/month'});
+  } else if(m.maxROps>5000||m.maxWOps>5000){
+    score-=10;
+    recs.push({sev:'medium',cat:'Storage',title:'Peak IOPS are high',detail:'Peak Read: '+m.maxROps+', Write: '+m.maxWOps+'.',action:'Ensure Premium SSD or Ultra Disk.',savings:'Performance'});
+  }
+
+  if(m.avgDdROps<5&&m.avgDdWOps<5&&(m.avgDdR>0||m.avgDdW>0)){
+    recs.push({sev:'low',cat:'Storage',title:'Data disk low IOPS',detail:'Read: '+m.avgDdROps+', Write: '+m.avgDdWOps+' IOPS.',action:'Move to Standard HDD/SSD.',savings:'Up to 60%'});
+  }
+
+  var rs=getRightSize(m);
+  if(rs&&rs.size!==m.vmSize){
+    var cur=m.si.c;
+    var nc=(CAT[rs.size]&&CAT[rs.size].c)||cur;
+    if(nc<cur){
+      var sp=Math.round((cur-nc)/cur*100);
+      var sm=Math.round((cur-nc)*730);
+      recs.push({sev:'high',cat:'Right-Sizing',title:'Recommended: '+rs.size,detail:m.vmSize+' -> '+rs.size+'. '+rs.reason,action:'Resize via Azure Portal -> VM -> Size.',savings:'~'+sp+'% (~$'+sm+'/mo)'});
+    }
+  }
+
+  recs.push({sev:'info',cat:'Cost',title:'Consider Reserved Instances',detail:'1 or 3-year reservations unlock major discounts.',action:'Azure Portal -> Reservations.',savings:'Up to 40-72% vs PAYG'});
+  recs.push({sev:'info',cat:'Governance',title:'Enable auto-shutdown',detail:'Reduces idle costs for non-prod VMs.',action:'Azure Portal -> VM -> Auto-shutdown.',savings:'Up to 60%'});
+
+  var tags=detail.tags||{};
+  var missing=['Environment','Owner','CostCenter','Application'].filter(function(t){return !tags[t];});
+  if(missing.length){
+    score-=5;
+    recs.push({sev:'low',cat:'Governance',title:'Missing tags: '+missing.join(', '),detail:'Untagged resources make cost attribution difficult.',action:'Add standard tags.',savings:'Better governance'});
+  }
+
+  recs.push({sev:'info',cat:'Tooling',title:'Enable Azure Advisor',detail:'Continuously surfaces recommendations.',action:'Navigate to Azure Advisor.',savings:'Ongoing'});
+
   return{score:Math.max(0,Math.round(score)),recs:recs,monthlyCost:r2(m.si.c*730),rs:rs};
 }
 
-function rightSize(m){
+function getRightSize(m){
   var tc=m.si.v,tr=m.si.r;
-  if(m.cpuAvg<10)tc=Math.max(1,Math.floor(m.si.v/2));else if(m.cpuAvg>80)tc=m.si.v*2;
-  if(m.memPct!==null){if(m.memPct<20)tr=Math.max(1,Math.floor(m.si.r/2));else if(m.memPct>85)tr=m.si.r*2;}
-  var best=null,bd=Infinity;
-  var keys=Object.keys(VM_CATALOG);
-  for(var i=0;i<keys.length;i++){
-    var sz=keys[i],info=VM_CATALOG[sz];
-    if(info.v>=tc&&info.r>=tr){var d=(info.v-tc)*2+(info.r-tr);if(d<bd){bd=d;best=sz;}}
+  if(m.cpuAvg<10)tc=Math.max(1,Math.floor(m.si.v/2));
+  else if(m.cpuAvg>80)tc=m.si.v*2;
+  if(m.memPct!==null){
+    if(m.memPct<20)tr=Math.max(1,Math.floor(m.si.r/2));
+    else if(m.memPct>85)tr=m.si.r*2;
   }
+  var best=null,bd=Infinity;
+  Object.keys(CAT).forEach(function(sz){
+    var info=CAT[sz];
+    if(info.v>=tc&&info.r>=tr){
+      var d=(info.v-tc)*2+(info.r-tr);
+      if(d<bd){bd=d;best=sz;}
+    }
+  });
   return best?{size:best,reason:'Target: '+tc+' vCPU / '+tr+' GB RAM.'}:null;
 }
 
-// ── DOM helpers ───────────────────────────────────────────
-function el(tag,props,children){
-  props=props||{};children=children||[];
+// ── DOM helpers ──────────────────────────────────────────────
+function h(tag,attrs,kids){
   var e=document.createElement(tag);
-  Object.keys(props).forEach(function(k){
-    var v=props[k];
-    if(k==='style'&&typeof v==='object')Object.assign(e.style,v);
-    else if(k==='className')e.className=v;
-    else if(k.indexOf('on')===0)e.addEventListener(k.slice(2).toLowerCase(),v);
-    else e.setAttribute(k,v);
+  if(attrs)Object.keys(attrs).forEach(function(k){
+    var v=attrs[k];
+    if(k==='style'&&typeof v==='object'){Object.assign(e.style,v);}
+    else if(k==='cls'){e.className=v;}
+    else if(k.slice(0,2)==='on'){e.addEventListener(k.slice(2),v);}
+    else{e.setAttribute(k,v);}
   });
-  var kids=Array.isArray(children)?children:[children];
-  kids.forEach(function(c){if(c!=null)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});
+  if(kids)(Array.isArray(kids)?kids:[kids]).forEach(function(c){
+    if(c!=null)e.appendChild(typeof c==='string'?document.createTextNode(c):c);
+  });
   return e;
 }
-function card(children,style){
-  style=style||{};
-  return el('div',{style:Object.assign({background:'white',borderRadius:'12px',border:'1px solid #e5e7eb',boxShadow:'0 1px 3px rgba(0,0,0,.06)',padding:'20px'},style)},children);
+function div(style,kids){return h('div',{style:style},kids);}
+function txt(s){return document.createTextNode(String(s));}
+
+function card(kids,extra){
+  return div(Object.assign({background:'white',borderRadius:'12px',border:'1px solid #e5e7eb',boxShadow:'0 1px 3px rgba(0,0,0,.06)',padding:'20px'},extra||{}),kids);
 }
-function mkBtn(label,onClick,opts){
+function btn(label,onclick,opts){
   opts=opts||{};
-  var variant=opts.variant||'primary',disabled=opts.disabled||false,sm=opts.sm||false,full=opts.full||false;
-  var th={primary:{background:'#2563eb',color:'white',border:'none'},secondary:{background:'white',color:'#374151',border:'1px solid #d1d5db'},ghost:{background:'transparent',color:'#6b7280',border:'none'}};
-  var b=el('button',{style:Object.assign({},th[variant],{borderRadius:'8px',cursor:disabled?'not-allowed':'pointer',fontWeight:'600',fontSize:sm?'12px':'14px',padding:sm?'7px 14px':'11px 22px',opacity:disabled?0.55:1,width:full?'100%':'auto',transition:'all .15s'})},[label]);
-  if(!disabled&&onClick)b.addEventListener('click',onClick);
+  var v=opts.variant||'primary';
+  var th={
+    primary:{background:'#2563eb',color:'white',border:'none'},
+    secondary:{background:'white',color:'#374151',border:'1px solid #d1d5db'},
+    ghost:{background:'transparent',color:'#6b7280',border:'none'}
+  };
+  var b=h('button',{style:Object.assign({},th[v],{
+    borderRadius:'8px',cursor:opts.disabled?'not-allowed':'pointer',fontWeight:'600',
+    fontSize:opts.sm?'12px':'14px',padding:opts.sm?'7px 14px':'11px 22px',
+    opacity:opts.disabled?0.55:1,width:opts.full?'100%':'auto',transition:'all .15s'
+  })},[label]);
+  if(!opts.disabled&&onclick)b.addEventListener('click',onclick);
   return b;
 }
 function errBox(msg){
   if(!msg)return null;
-  return el('div',{style:{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'13px',color:'#dc2626'}},['Error: '+msg]);
+  return div({background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'13px',color:'#dc2626'},['Error: '+msg]);
 }
-function statCard(label,value,unit,sub,color,warn){
-  unit=unit||'';sub=sub||'';color=color||'#1d4ed8';warn=warn||false;
-  return el('div',{style:{background:'white',borderRadius:'12px',border:'1.5px solid '+(warn?'#fca5a5':'#e5e7eb'),padding:'16px 18px',textAlign:'center'}},
-    [el('div',{style:{fontSize:'11px',color:'#6b7280',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'6px'}},[label]),
-     el('div',{style:{fontSize:'26px',fontWeight:'900',color:color,lineHeight:'1'}},[String(value),el('span',{style:{fontSize:'13px',fontWeight:'500',color:'#6b7280',marginLeft:'2px'}},unit?[unit]:[])]),
-     sub?el('div',{style:{fontSize:'11px',color:'#9ca3af',marginTop:'4px'}},[sub]):null].filter(Boolean));
+function sCard(label,val,unit,sub,color,warn){
+  return div({background:'white',borderRadius:'12px',border:'1.5px solid '+(warn?'#fca5a5':'#e5e7eb'),padding:'16px',textAlign:'center'},[
+    div({fontSize:'11px',color:'#6b7280',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'6px'},[label]),
+    div({fontSize:'24px',fontWeight:'900',color:color||'#1d4ed8',lineHeight:'1'},[String(val),unit?h('span',{style:{fontSize:'12px',color:'#6b7280',marginLeft:'2px'}},[unit]):null].filter(Boolean)),
+    sub?div({fontSize:'11px',color:'#9ca3af',marginTop:'4px'},[sub]):null
+  ].filter(Boolean));
 }
-function rowEl(k,v){
-  return el('div',{style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #f3f4f6',fontSize:'13px'}},
-    [el('span',{style:{color:'#6b7280'}},[k]),
-     el('span',{style:{fontWeight:'600',color:'#111827',maxWidth:'250px',textAlign:'right',wordBreak:'break-all'}},[String(v||'--')])]);
+function rowItem(k,v){
+  return div({display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #f3f4f6',fontSize:'13px'},[
+    h('span',{style:{color:'#6b7280'}},[k]),
+    h('span',{style:{fontWeight:'600',color:'#111827',maxWidth:'240px',textAlign:'right',wordBreak:'break-all'}},[String(v||'--')])
+  ]);
 }
-function barTable(rows){
+function barTbl(rows){
   var vals=rows.map(function(r){return parseFloat(r.v)||0;});
   var mx=Math.max.apply(null,[1].concat(vals));
-  var t=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  var tb=el('tbody');
+  var tb=h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
+  var tbody=h('tbody');
   rows.forEach(function(r){
     var w=Math.round((parseFloat(r.v)||0)/mx*100);
-    var bar=el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'80px'}},
-      [el('div',{style:{height:'8px',borderRadius:'4px',background:'#2563eb',width:w+'%',minWidth:'2px'}})]);
-    tb.appendChild(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
-      [el('td',{style:{padding:'7px 8px',color:'#6b7280',whiteSpace:'nowrap'}},[r.name]),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:'700',color:'#111827'}},[String(r.v)]),
-       el('td',{style:{padding:'7px 8px',minWidth:'100px'}},[bar])]));
+    var bar=div({background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'80px'},[
+      div({height:'8px',borderRadius:'4px',background:'#2563eb',width:w+'%',minWidth:'2px'},[])
+    ]);
+    tbody.appendChild(h('tr',{style:{borderBottom:'1px solid #f3f4f6'}},[
+      h('td',{style:{padding:'7px 8px',color:'#6b7280',whiteSpace:'nowrap'}},[r.name]),
+      h('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:'700',color:'#111827'}},[String(r.v)]),
+      h('td',{style:{padding:'7px 8px',minWidth:'90px'}},[bar])
+    ]));
   });
-  t.appendChild(tb);return t;
+  tb.appendChild(tbody);
+  return tb;
 }
-function cpuTable(data){
-  var t=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  t.appendChild(el('thead',{},[el('tr',{},[
-    el('th',{style:{textAlign:'left',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Date']),
-    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Avg %']),
-    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Max %']),
-    el('th',{style:{padding:'6px 8px',borderBottom:'2px solid #e5e7eb'}},['Trend'])])]));
-  var tb=el('tbody');
-  if(!data.length)tb.appendChild(el('tr',{},[el('td',{colspan:'4',style:{padding:'12px',color:'#9ca3af',textAlign:'center'}},['No data'])]));
+function cpuTbl(data){
+  var t=h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
+  var thead=h('thead');
+  var hr=h('tr');
+  ['Date','Avg %','Max %','Trend'].forEach(function(lbl){
+    hr.appendChild(h('th',{style:{textAlign:'left',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},[lbl]));
+  });
+  thead.appendChild(hr);t.appendChild(thead);
+  var tbody=h('tbody');
+  if(!data.length)tbody.appendChild(h('tr',{},[h('td',{colspan:'4',style:{padding:'12px',color:'#9ca3af',textAlign:'center'}},['No data'])]));
   data.forEach(function(d){
     var col=d.avgCPU>80?'#dc2626':d.avgCPU>50?'#f59e0b':'#2563eb';
-    var bar=el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'100px'}},
-      [el('div',{style:{height:'8px',borderRadius:'4px',background:col,width:Math.round(d.avgCPU)+'%',minWidth:'2px'}})]);
-    tb.appendChild(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
-      [el('td',{style:{padding:'7px 8px',fontWeight:'600',color:'#374151'}},[d.date]),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',color:col,fontWeight:'700'}},[d.avgCPU+'%']),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',color:'#9ca3af'}},[d.maxCPU+'%']),
-       el('td',{style:{padding:'7px 8px'}},[bar])]));
+    var bar=div({background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'100px'},[
+      div({height:'8px',borderRadius:'4px',background:col,width:Math.round(d.avgCPU)+'%',minWidth:'2px'},[])
+    ]);
+    tbody.appendChild(h('tr',{style:{borderBottom:'1px solid #f3f4f6'}},[
+      h('td',{style:{padding:'7px 8px',fontWeight:'600',color:'#374151'}},[d.date]),
+      h('td',{style:{padding:'7px 8px',color:col,fontWeight:'700'}},[d.avgCPU+'%']),
+      h('td',{style:{padding:'7px 8px',color:'#9ca3af'}},[d.maxCPU+'%']),
+      h('td',{style:{padding:'7px 8px'}},[bar])
+    ]));
   });
-  t.appendChild(tb);return t;
+  t.appendChild(tbody);
+  return t;
 }
 
-// ── Render ────────────────────────────────────────────────
-function render(){
-  var app=$('app');app.innerHTML='';
-  if(S.phase==='auth')app.appendChild(renderAuth());
-  else if(S.phase==='browse')app.appendChild(renderBrowse());
-  else if(S.phase==='analyze'&&S.report&&S.metrics)app.appendChild(renderAnalyze());
-  else app.appendChild(el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280'}},['Loading...']));
+// ── DRAW ─────────────────────────────────────────────────────
+function draw(){
+  var root=document.getElementById('root');
+  root.innerHTML='';
+  if(S.phase==='auth')root.appendChild(drawAuth());
+  else if(S.phase==='browse')root.appendChild(drawBrowse());
+  else if(S.phase==='analyze'&&S.report)root.appendChild(drawAnalyze());
+  else root.appendChild(div({display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280'},['Loading...']));
 }
 
-// ── AUTH ──────────────────────────────────────────────────
-function renderAuth(){
-  var wrap=el('div',{style:{minHeight:'100vh',background:'linear-gradient(145deg,#0f172a 0%,#1e3a8a 60%,#1d4ed8 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}});
-  var inner=el('div',{style:{width:'100%',maxWidth:'420px'}});
-  inner.appendChild(el('div',{style:{textAlign:'center',marginBottom:'28px',color:'white'}},
-    [el('div',{style:{fontSize:'52px',marginBottom:'8px'}},['Azure']),
-     el('h1',{style:{fontSize:'26px',fontWeight:'900',color:'white',marginBottom:'6px'}},['Azure VM Optimizer']),
-     el('p',{style:{color:'#93c5fd',fontSize:'13px'}},['Analyze and optimize your Azure Virtual Machines'])]));
+// ── AUTH ──────────────────────────────────────────────────────
+function drawAuth(){
+  var wrap=div({minHeight:'100vh',background:'linear-gradient(145deg,#0f172a,#1e3a8a,#1d4ed8)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'});
+  var inner=div({width:'100%',maxWidth:'400px'});
+  inner.appendChild(div({textAlign:'center',marginBottom:'28px',color:'white'},[
+    div({fontSize:'48px',marginBottom:'8px'},['☁']),
+    h('h1',{style:{fontSize:'24px',fontWeight:'900',color:'white',marginBottom:'6px'}},['Azure VM Optimizer']),
+    h('p',{style:{color:'#93c5fd',fontSize:'13px'}},['Analyze and optimize your Azure Virtual Machines'])
+  ]));
   var c=card([],{padding:'28px'});
   if(S.busy){
-    c.appendChild(el('div',{style:{textAlign:'center',padding:'20px 0',color:'#6b7280'}},
-      [el('div',{style:{fontSize:'32px',marginBottom:'12px'}},['...']),
-       el('div',{style:{fontWeight:'600',fontSize:'14px',color:'#374151'}},['Completing sign-in...'])]));
+    c.appendChild(div({textAlign:'center',padding:'24px 0',color:'#6b7280'},[
+      div({fontSize:'28px',marginBottom:'12px'},['...']),
+      div({fontWeight:'600',fontSize:'14px',color:'#374151'},['Completing sign-in...'])
+    ]));
   } else {
     var eb=errBox(S.err);if(eb)c.appendChild(eb);
-    var msBtn=el('button',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',
+    // MS button
+    var msb=h('button',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',
       width:'100%',padding:'13px 20px',background:'white',border:'1.5px solid #d1d5db',
       borderRadius:'10px',cursor:'pointer',fontSize:'15px',fontWeight:'600',color:'#374151',
-      boxShadow:'0 1px 3px rgba(0,0,0,.1)',marginBottom:'20px',transition:'all .15s'}});
+      boxShadow:'0 1px 3px rgba(0,0,0,.1)',marginBottom:'16px',transition:'all .15s'}});
+    // MS logo
     var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('width','21');svg.setAttribute('height','21');svg.setAttribute('viewBox','0 0 21 21');
-    [['#f25022',1,1],['#7fba00',11,1],['#00a4ef',1,11],['#ffb900',11,11]].forEach(function(x){
-      var rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
-      rect.setAttribute('x',x[1]);rect.setAttribute('y',x[2]);rect.setAttribute('width','9');rect.setAttribute('height','9');rect.setAttribute('fill',x[0]);svg.appendChild(rect);
+    svg.setAttribute('width','20');svg.setAttribute('height','20');svg.setAttribute('viewBox','0 0 20 20');
+    [['#f25022',0,0],['#7fba00',11,0],['#00a4ef',0,11],['#ffb900',11,11]].forEach(function(x){
+      var r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r.setAttribute('x',x[1]);r.setAttribute('y',x[2]);r.setAttribute('width','9');r.setAttribute('height','9');r.setAttribute('fill',x[0]);
+      svg.appendChild(r);
     });
-    msBtn.appendChild(svg);msBtn.appendChild(document.createTextNode('Sign in with Microsoft'));
-    msBtn.addEventListener('click',startLogin);
-    c.appendChild(msBtn);
-    c.appendChild(el('div',{style:{textAlign:'center',fontSize:'12px',color:'#9ca3af',marginBottom:'16px'}},['Supports MFA - Redirects to Microsoft login - No credentials stored']));
-    c.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'12px 14px',fontSize:'12px',color:'#6b7280'}},
-      ['First time? You need an App Registration in Entra ID with this page URL as the SPA Redirect URI and Azure Service Management user_impersonation permission granted.']));
+    msb.appendChild(svg);
+    msb.appendChild(document.createTextNode('Sign in with Microsoft'));
+    msb.addEventListener('click',startLogin);
+    c.appendChild(msb);
+    c.appendChild(div({textAlign:'center',fontSize:'12px',color:'#9ca3af',marginBottom:'16px'},['Supports MFA - Full Microsoft login experience']));
+    c.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'12px',fontSize:'12px',color:'#6b7280',lineHeight:'1.6'},[
+      h('strong',{style:{color:'#374151'}},['First time setup: ']),
+      'Create an App Registration in Entra ID. Set this page URL as the SPA Redirect URI and grant Azure Service Management user_impersonation permission.'
+    ]));
   }
   inner.appendChild(c);
   wrap.appendChild(inner);
   return wrap;
 }
 
-// ── BROWSE ────────────────────────────────────────────────
-function renderBrowse(){
+// ── BROWSE ────────────────────────────────────────────────────
+function drawBrowse(){
   function go(fn){
-    setState({busy:true,err:null});
-    fn().then(function(){setState({busy:false});}).catch(function(e){setState({busy:false,err:e.message});});
+    set({busy:true,err:null});
+    fn().then(function(){set({busy:false});}).catch(function(e){set({busy:false,err:e.message});});
   }
-  var wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
-  var hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
-  var soBtn=mkBtn('Sign out',function(){setState({token:null,phase:'auth',subs:[],selSub:null,rgs:[],selRG:null,vms:[]});},{variant:'secondary',sm:true});
-  soBtn.style.marginLeft='auto';
-  hdr.appendChild(el('span',{style:{fontSize:'22px'}},['VM']));
-  hdr.appendChild(el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},['Azure VM Optimizer']));
-  hdr.appendChild(el('span',{style:{background:'#dcfce7',color:'#15803d',fontSize:'11px',fontWeight:'700',padding:'2px 10px',borderRadius:'99px'}},['Signed in']));
-  if(S.busy)hdr.appendChild(el('span',{style:{color:'#6b7280',fontSize:'12px'}},['Loading...']));
-  hdr.appendChild(soBtn);
-
-  var body=el('div',{style:{maxWidth:'960px',margin:'0 auto',padding:'24px'}});
+  var wrap=div({minHeight:'100vh',background:'#f8fafc'});
+  // header
+  var hdr=div({background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'});
+  hdr.appendChild(div({fontWeight:'800',fontSize:'15px',color:'#111827'},['☁ Azure VM Optimizer']));
+  hdr.appendChild(div({background:'#dcfce7',color:'#15803d',fontSize:'11px',fontWeight:'700',padding:'2px 10px',borderRadius:'99px'},['Signed in']));
+  if(S.busy)hdr.appendChild(div({color:'#6b7280',fontSize:'12px'},['Loading...']));
+  var sob=btn('Sign out',function(){set({token:null,phase:'auth',subs:[],selSub:null,rgs:[],selRG:null,vms:[]});},{variant:'secondary',sm:true});
+  sob.style.marginLeft='auto';
+  hdr.appendChild(sob);
+  var body=div({maxWidth:'960px',margin:'0 auto',padding:'24px'});
   var eb=errBox(S.err);if(eb)body.appendChild(eb);
+  var grid=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'});
 
-  var grid=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'}});
-
+  // subscriptions
   var filtSubs=S.subs.filter(function(s){
-    return s.displayName.toLowerCase().indexOf(S.subQ.toLowerCase())>=0||s.subscriptionId.toLowerCase().indexOf(S.subQ.toLowerCase())>=0;
+    var q=S.subQ.toLowerCase();
+    return s.displayName.toLowerCase().indexOf(q)>=0||s.subscriptionId.toLowerCase().indexOf(q)>=0;
   });
-  var subList=el('div',{style:{display:'flex',flexDirection:'column',gap:'7px',maxHeight:'320px',overflowY:'auto'}});
+  var srch=h('input',{type:'text',value:S.subQ,placeholder:'Search subscriptions...',
+    style:{width:'100%',padding:'8px 12px',border:'1.5px solid #e5e7eb',borderRadius:'8px',fontSize:'12px',marginBottom:'10px',boxSizing:'border-box'}});
+  srch.addEventListener('input',function(e){S.subQ=e.target.value;draw();});
+  var subList=div({display:'flex',flexDirection:'column',gap:'7px',maxHeight:'300px',overflowY:'auto'});
   filtSubs.forEach(function(s){
     var active=S.selSub&&S.selSub.subscriptionId===s.subscriptionId;
-    var b=el('button',{style:{textAlign:'left',padding:'10px 13px',borderRadius:'8px',border:'1.5px solid',borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px'}},
-      [el('div',{style:{fontWeight:'700',color:'#111827'}},[s.displayName]),
-       el('div',{style:{color:'#9ca3af',fontSize:'11px',fontFamily:'monospace',marginTop:'2px'}},[s.subscriptionId])]);
+    var b=div({textAlign:'left',padding:'10px 13px',borderRadius:'8px',border:'1.5px solid '+(active?'#2563eb':'#e5e7eb'),background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px'},[
+      div({fontWeight:'700',color:'#111827'},[s.displayName]),
+      div({color:'#9ca3af',fontSize:'11px',fontFamily:'monospace',marginTop:'2px'},[s.subscriptionId])
+    ]);
     b.addEventListener('click',function(){
-      go(async function(){
-        setState({selSub:s,rgs:[],vms:[],selRG:null});
-        var r=await az(MGMT+'/subscriptions/'+s.subscriptionId+'/resourcegroups?api-version=2023-07-01');
-        setState({rgs:r.value||[]});
+      go(function(){
+        set({selSub:s,rgs:[],vms:[],selRG:null});
+        return azGet(MGMT+'/subscriptions/'+s.subscriptionId+'/resourcegroups?api-version=2023-07-01').then(function(r){set({rgs:r.value||[]});});
       });
     });
     subList.appendChild(b);
   });
-  var srch=el('input',{type:'text',value:S.subQ,placeholder:'Search subscriptions...',
-    style:{width:'100%',padding:'8px 12px',border:'1.5px solid #e5e7eb',borderRadius:'8px',fontSize:'12px',marginBottom:'10px',boxSizing:'border-box'}});
-  srch.addEventListener('input',function(e){S.subQ=e.target.value;render();});
-  grid.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Subscription']),srch,subList]));
+  grid.appendChild(card([h('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Subscription']),srch,subList]));
 
+  // resource groups
   if(S.selSub){
-    var rgList=el('div',{style:{display:'flex',flexDirection:'column',gap:'7px',maxHeight:'320px',overflowY:'auto'}});
+    var rgList=div({display:'flex',flexDirection:'column',gap:'7px',maxHeight:'300px',overflowY:'auto'});
     S.rgs.forEach(function(rg){
       var active=S.selRG===rg.name;
-      var b=el('button',{style:{textAlign:'left',padding:'9px 13px',borderRadius:'8px',border:'1.5px solid',borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px',fontWeight:'600',color:'#111827'}},
-        [rg.name,el('span',{style:{color:'#9ca3af',fontWeight:'400',fontSize:'11px',marginLeft:'6px'}},[rg.location])]);
+      var b=div({padding:'9px 13px',borderRadius:'8px',border:'1.5px solid '+(active?'#2563eb':'#e5e7eb'),background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px',fontWeight:'600',color:'#111827'},[
+        rg.name+' ',h('span',{style:{color:'#9ca3af',fontWeight:'400',fontSize:'11px'}},[rg.location])
+      ]);
       b.addEventListener('click',function(){
-        go(async function(){
-          setState({selRG:rg.name,vms:[]});
-          var sid=S.selSub.subscriptionId;var found=[];
+        go(function(){
+          set({selRG:rg.name,vms:[]});
+          var sid=S.selSub.subscriptionId;
           var apis=['2024-03-01','2023-09-01','2023-03-01'];
-          for(var i=0;i<apis.length;i++){
-            try{var r=await az(MGMT+'/subscriptions/'+sid+'/resourceGroups/'+encodeURIComponent(rg.name)+'/providers/Microsoft.Compute/virtualMachines?api-version='+apis[i]);found=r.value||[];if(found.length)break;}catch(e){}
-          }
-          if(!found.length){
-            var r2=await az(MGMT+'/subscriptions/'+sid+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01');
-            found=(r2.value||[]).filter(function(v){var p=v.id.split('/'),i=p.findIndex(function(x){return x.toLowerCase()==='resourcegroups';});return i>=0&&p[i+1]&&p[i+1].toLowerCase()===rg.name.toLowerCase();});
-          }
-          setState({vms:found,err:found.length?null:'No VMs found in "'+rg.name+'".'});
+          var found=[];
+          var chain=Promise.resolve();
+          apis.forEach(function(api){
+            chain=chain.then(function(){
+              if(found.length)return Promise.resolve();
+              return azGet(MGMT+'/subscriptions/'+sid+'/resourceGroups/'+encodeURIComponent(rg.name)+'/providers/Microsoft.Compute/virtualMachines?api-version='+api)
+                .then(function(r){found=r.value||[];}).catch(function(){});
+            });
+          });
+          return chain.then(function(){
+            if(found.length){set({vms:found});return;}
+            return azGet(MGMT+'/subscriptions/'+sid+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01').then(function(r){
+              var all=r.value||[];
+              found=all.filter(function(v){
+                var p=v.id.split('/');
+                var i=p.indexOf('resourceGroups');
+                if(i<0)i=p.map(function(x){return x.toLowerCase();}).indexOf('resourcegroups');
+                return i>=0&&p[i+1]&&p[i+1].toLowerCase()===rg.name.toLowerCase();
+              });
+              set({vms:found,err:found.length?null:'No VMs found in "'+rg.name+'".'});
+            });
+          });
         });
       });
       rgList.appendChild(b);
     });
-    grid.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Resource Group']),rgList]));
+    grid.appendChild(card([h('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Resource Group']),rgList]));
   }
   body.appendChild(grid);
 
   if(S.selSub){
-    var allBtn=mkBtn('Show ALL VMs in subscription',function(){
-      go(async function(){
-        setState({selRG:'All VMs',vms:[]});
-        var r=await az(MGMT+'/subscriptions/'+S.selSub.subscriptionId+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01');
-        var found=r.value||[];setState({vms:found,err:found.length?null:'No VMs found.'});
+    var allBtn=btn('Show ALL VMs in subscription',function(){
+      go(function(){
+        set({selRG:'All VMs',vms:[]});
+        return azGet(MGMT+'/subscriptions/'+S.selSub.subscriptionId+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01').then(function(r){
+          var found=r.value||[];
+          set({vms:found,err:found.length?null:'No VMs found.'});
+        });
       });
     },{variant:'secondary',sm:true});
-    body.appendChild(el('div',{style:{marginBottom:'14px'}},[allBtn]));
+    body.appendChild(div({marginBottom:'14px'},[allBtn]));
   }
 
   if(S.vms.length>0){
-    var vmGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(270px,1fr))',gap:'12px'}});
+    var vmGrid=div({display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(270px,1fr))',gap:'12px'});
     S.vms.forEach(function(vm){
       var sz=(vm.properties&&vm.properties.hardwareProfile&&vm.properties.hardwareProfile.vmSize)||'';
-      var info=VM_CATALOG[sz];
+      var info=CAT[sz];
       var vmos=(vm.properties&&vm.properties.storageProfile&&vm.properties.storageProfile.osDisk&&vm.properties.storageProfile.osDisk.osType)||'Linux';
-      var parts=vm.id.split('/'),rgi=parts.findIndex(function(p){return p.toLowerCase()==='resourcegroups';});
+      var parts=vm.id.split('/');
+      var rgi=-1;
+      parts.forEach(function(p,i){if(p.toLowerCase()==='resourcegroups')rgi=i;});
       var vmRG=rgi>=0?parts[rgi+1]:'';
-      var aBtn=mkBtn(S.busy?'Analyzing...':'Analyze and Optimize',function(){
-        go(async function(){
-          setState({selVM:vm,report:null,metrics:null});
-          var detail=await az(MGMT+vm.id+'?api-version=2023-07-01&$expand=instanceView');
-          setState({vmDetail:detail});
-          var res=await fetchMetrics(vm.id,S.token);
-          var proc=processMetrics(res.all,res.memMetric,detail);
-          setState({metrics:proc,report:buildReport(proc,detail),phase:'analyze',tab:'overview'});
+      var ab=btn(S.busy?'Analyzing...':'Analyze and Optimize',function(){
+        go(function(){
+          set({selVM:vm,report:null,metrics:null});
+          return azGet(MGMT+vm.id+'?api-version=2023-07-01&$expand=instanceView').then(function(detail){
+            set({vmDetail:detail});
+            return fetchMetrics(vm.id).then(function(res){
+              var proc=procMetrics(res.all,res.mem,detail);
+              set({metrics:proc,report:buildReport(proc,detail),phase:'analyze',tab:'overview'});
+            });
+          });
         });
       },{sm:true,disabled:S.busy});
-      vmGrid.appendChild(el('div',{style:{border:'1.5px solid #e5e7eb',borderRadius:'10px',padding:'16px',background:'white'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'14px',color:'#111827',marginBottom:'3px'}},[(vmos==='Windows'?'[Win] ':'[Linux] ')+vm.name]),
-         el('div',{style:{fontSize:'11px',color:'#9ca3af',marginBottom:'6px'}},[vm.location+(vmRG?' - '+vmRG:'')]),
-         el('div',{style:{fontSize:'12px',color:'#374151',marginBottom:'12px'}},
-           [el('strong',{},[sz]),info?el('span',{style:{color:'#6b7280'}},[' - '+info.v+' vCPU - '+info.r+' GB - ~$'+r2(info.c*730)+'/mo']):null].filter(Boolean)),
-         aBtn]));
+      vmGrid.appendChild(div({border:'1.5px solid #e5e7eb',borderRadius:'10px',padding:'16px',background:'white'},[
+        div({fontWeight:'700',fontSize:'14px',color:'#111827',marginBottom:'3px'},[(vmos==='Windows'?'[Win] ':'[Lin] ')+vm.name]),
+        div({fontSize:'11px',color:'#9ca3af',marginBottom:'6px'},[vm.location+(vmRG?' - '+vmRG:'')]),
+        div({fontSize:'12px',color:'#374151',marginBottom:'12px'},[
+          h('strong',{},[sz]),
+          info?h('span',{style:{color:'#6b7280'}},['  '+info.v+' vCPU  '+info.r+' GB  ~$'+r2(info.c*730)+'/mo']):null
+        ].filter(Boolean)),
+        ab
+      ]));
     });
-    body.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'14px'}},['Virtual Machines - '+(S.selRG||'')]),vmGrid]));
+    body.appendChild(card([h('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'14px'}},['Virtual Machines - '+(S.selRG||'')]),vmGrid]));
   } else if(S.selSub&&!S.busy&&!S.err){
-    body.appendChild(card([el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['Select a resource group or click Show ALL VMs.'])]));
+    body.appendChild(card([div({color:'#9ca3af',fontSize:'13px'},['Select a resource group or click Show ALL VMs.'])]));
   }
-
   wrap.appendChild(hdr);wrap.appendChild(body);
   return wrap;
 }
 
-// ── ANALYZE ───────────────────────────────────────────────
-function renderAnalyze(){
+// ── ANALYZE ───────────────────────────────────────────────────
+function drawAnalyze(){
   var m=S.metrics,rep=S.report,vd=S.vmDetail;
   var tags=vd&&vd.tags||{};
   var os=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk&&vd.properties.storageProfile.osDisk.osType)||'Linux';
   var statuses=vd&&vd.properties&&vd.properties.instanceView&&vd.properties.instanceView.statuses||[];
-  var pwStatus=statuses.find(function(s){return s.code&&s.code.indexOf('PowerState/')===0;});
-  var pw=(pwStatus&&pwStatus.displayStatus)||'Unknown';
-  var osDiskObj=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk;
+  var pwS=null;
+  statuses.forEach(function(s){if(s.code&&s.code.indexOf('PowerState/')===0)pwS=s;});
+  var pw=(pwS&&pwS.displayStatus)||'Unknown';
+  var osDisk=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk;
   var dataDisks=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.dataDisks)||[];
-  var disks=[osDiskObj].concat(dataDisks).filter(Boolean);
+  var allDisks=[osDisk].concat(dataDisks).filter(Boolean);
   var TABS=['overview','cpu','disk','network','recommendations','details'];
 
-  var wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
-  var hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
-  var pwBadge=el('span',{style:{marginLeft:'auto',background:pw.indexOf('running')>=0?'#dcfce7':'#fef3c7',color:pw.indexOf('running')>=0?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'}},[pw]);
-  hdr.appendChild(mkBtn('Back',function(){setState({phase:'browse'});},{variant:'secondary',sm:true}));
-  hdr.appendChild(el('span',{style:{fontSize:'20px'}},['VM']));
-  hdr.appendChild(el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},[(os==='Windows'?'[Win] ':'[Linux] ')+(S.selVM&&S.selVM.name||'')]));
-  hdr.appendChild(el('span',{style:{color:'#6b7280',fontSize:'12px'}},[m.vmSize+' - '+(S.selVM&&S.selVM.location||'')]));
+  var wrap=div({minHeight:'100vh',background:'#f8fafc'});
+  var hdr=div({background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'});
+  hdr.appendChild(btn('Back',function(){set({phase:'browse'});},{variant:'secondary',sm:true}));
+  hdr.appendChild(div({fontWeight:'800',fontSize:'15px',color:'#111827'},[(os==='Windows'?'[Win] ':'[Lin] ')+(S.selVM&&S.selVM.name||'')]));
+  hdr.appendChild(div({fontSize:'12px',color:'#6b7280'},[m.vmSize+' - '+(S.selVM&&S.selVM.location||'')]));
+  var pwBadge=div({background:pw.indexOf('running')>=0?'#dcfce7':'#fef3c7',color:pw.indexOf('running')>=0?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'},[pw]);
+  pwBadge.style.marginLeft='auto';
   hdr.appendChild(pwBadge);
 
-  var body=el('div',{style:{maxWidth:'1120px',margin:'0 auto',padding:'24px'}});
+  var body=div({maxWidth:'1120px',margin:'0 auto',padding:'24px'});
 
-  var banner=el('div',{style:{display:'grid',gridTemplateColumns:'180px 1fr',gap:'16px',marginBottom:'20px'}});
-  var sc=card([
-    el('div',{style:{fontSize:'11px',fontWeight:'700',color:'#6b7280',marginBottom:'8px'}},['OPTIMIZATION SCORE']),
-    el('div',{style:{fontSize:'68px',fontWeight:'900',color:scC(rep.score),lineHeight:'1'}},[String(rep.score)]),
-    el('div',{style:{fontSize:'12px',color:scC(rep.score),marginTop:'6px',fontWeight:'700'}},[rep.score>=80?'Well Optimized':rep.score>=60?'Needs Attention':'Needs Work']),
-    el('div',{style:{marginTop:'10px',fontSize:'12px',color:'#374151'}},['~$'+rep.monthlyCost+'/month'])
-  ],{textAlign:'center',background:scBg(rep.score)});
-  var chips=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'7px',marginBottom:'8px'}});
-  rep.recs.forEach(function(r){var s=SEV[r.sev];chips.appendChild(el('span',{style:{background:s.bg,color:s.tx,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'99px',border:'1px solid '+s.bd}},[r.title]));});
-  var sc2=card([el('div',{style:{fontSize:'13px',fontWeight:'700',color:'#111827',marginBottom:'10px'}},[rep.recs.length+' Recommendations - 7-day analysis']),chips]);
-  if(rep.rs&&rep.rs.size!==m.vmSize)sc2.appendChild(el('div',{style:{marginTop:'8px',padding:'9px 12px',background:'#f0fdf4',borderRadius:'8px',fontSize:'12px',color:'#15803d',fontWeight:'600'}},['Right-size to '+rep.rs.size+' - '+rep.rs.reason]));
-  banner.appendChild(sc);banner.appendChild(sc2);
+  // score banner
+  var banner=div({display:'grid',gridTemplateColumns:'170px 1fr',gap:'16px',marginBottom:'20px'});
+  banner.appendChild(card([
+    div({fontSize:'11px',fontWeight:'700',color:'#6b7280',marginBottom:'8px'},['OPTIMIZATION SCORE']),
+    div({fontSize:'64px',fontWeight:'900',color:scC(rep.score),lineHeight:'1'},[String(rep.score)]),
+    div({fontSize:'12px',color:scC(rep.score),marginTop:'6px',fontWeight:'700'},[rep.score>=80?'Well Optimized':rep.score>=60?'Needs Attention':'Needs Work']),
+    div({marginTop:'10px',fontSize:'12px',color:'#374151'},['~$'+rep.monthlyCost+'/month'])
+  ],{textAlign:'center',background:scBg(rep.score)}));
+  var chips=div({display:'flex',flexWrap:'wrap',gap:'7px',marginBottom:'8px'});
+  rep.recs.forEach(function(r){
+    var s=SEV[r.sev];
+    chips.appendChild(div({background:s.bg,color:s.tx,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'99px',border:'1px solid '+s.bd},[r.title]));
+  });
+  var sc2=card([div({fontSize:'13px',fontWeight:'700',color:'#111827',marginBottom:'10px'},[rep.recs.length+' Recommendations - 7-day analysis']),chips]);
+  if(rep.rs&&rep.rs.size!==m.vmSize){
+    sc2.appendChild(div({marginTop:'8px',padding:'9px 12px',background:'#f0fdf4',borderRadius:'8px',fontSize:'12px',color:'#15803d',fontWeight:'600'},['Right-size to '+rep.rs.size+' - '+rep.rs.reason]));
+  }
+  banner.appendChild(sc2);
   body.appendChild(banner);
 
-  var tabBar=el('div',{style:{display:'flex',gap:'3px',marginBottom:'20px',background:'white',borderRadius:'10px',padding:'5px',border:'1px solid #e5e7eb',width:'fit-content'}});
+  // tabs
+  var tabBar=div({display:'flex',gap:'3px',marginBottom:'20px',background:'white',borderRadius:'10px',padding:'5px',border:'1px solid #e5e7eb',width:'fit-content'});
   TABS.forEach(function(t){
-    var b=el('button',{className:'tab-btn'+(S.tab===t?' active':'')},[t.charAt(0).toUpperCase()+t.slice(1)]);
-    b.addEventListener('click',function(){setState({tab:t});});
+    var b=h('button',{cls:'tabbtn'+(S.tab===t?' on':'')},[t.charAt(0).toUpperCase()+t.slice(1)]);
+    b.addEventListener('click',function(){set({tab:t});});
     tabBar.appendChild(b);
   });
   body.appendChild(tabBar);
 
-  var content=el('div');
+  var content=div({});
 
   if(S.tab==='overview'){
-    var g1=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
-    g1.appendChild(statCard('Avg CPU',m.cpuAvg,'%','Max '+m.cpuMax+'% p95 '+m.cpuP95+'%',m.cpuAvg>80?'#dc2626':m.cpuAvg<10?'#d97706':'#2563eb',m.cpuAvg>85||m.cpuAvg<5));
-    g1.appendChild(statCard('Memory',m.memPct!=null?m.memPct:'N/A',m.memPct?'%':'',m.memPct?'Avg 7 days':'Linux/unavailable',!m.memPct?'#9ca3af':m.memPct>85?'#dc2626':'#2563eb',m.memPct>85));
-    g1.appendChild(statCard('Disk Read',m.avgDiskR,'MB/s',m.avgROps+' avg IOPS','#7c3aed'));
-    g1.appendChild(statCard('Disk Write',m.avgDiskW,'MB/s',m.avgWOps+' avg IOPS','#7c3aed'));
-    var g2=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
-    g2.appendChild(statCard('Data Disk R',m.avgDdR,'MB/s',m.avgDdROps+' IOPS','#0891b2'));
-    g2.appendChild(statCard('Data Disk W',m.avgDdW,'MB/s',m.avgDdWOps+' IOPS','#0891b2'));
-    g2.appendChild(statCard('Net In 7d',m.totIn,'GB','','#059669'));
-    g2.appendChild(statCard('Net Out 7d',m.totOut,'GB','','#059669'));
+    var g1=div({display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'});
+    g1.appendChild(sCard('Avg CPU',m.cpuAvg,'%','Max '+m.cpuMax+'%  p95 '+m.cpuP95+'%',m.cpuAvg>80?'#dc2626':m.cpuAvg<10?'#d97706':'#2563eb',m.cpuAvg>85||m.cpuAvg<5));
+    g1.appendChild(sCard('Memory',m.memPct!=null?m.memPct:'N/A',m.memPct?'%':'',m.memPct?'Avg 7 days':'Linux/unavailable',!m.memPct?'#9ca3af':m.memPct>85?'#dc2626':'#2563eb',m.memPct>85));
+    g1.appendChild(sCard('Disk Read',m.avgDiskR,'MB/s',m.avgROps+' avg IOPS','#7c3aed'));
+    g1.appendChild(sCard('Disk Write',m.avgDiskW,'MB/s',m.avgWOps+' avg IOPS','#7c3aed'));
+    var g2=div({display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'});
+    g2.appendChild(sCard('Data Disk R',m.avgDdR,'MB/s',m.avgDdROps+' IOPS','#0891b2'));
+    g2.appendChild(sCard('Data Disk W',m.avgDdW,'MB/s',m.avgDdWOps+' IOPS','#0891b2'));
+    g2.appendChild(sCard('Net In 7d',m.totIn,'GB','','#059669'));
+    g2.appendChild(sCard('Net Out 7d',m.totOut,'GB','','#059669'));
     content.appendChild(g1);content.appendChild(g2);
-    content.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',color:'#374151',marginBottom:'14px'}},['CPU Utilization - Daily Trend (7 days)']),cpuTable(m.chartData)]));
+    content.appendChild(card([div({fontWeight:'700',fontSize:'13px',color:'#374151',marginBottom:'14px'},['CPU Utilization - Daily Trend']),cpuTbl(m.chart)]));
   }
+
   if(S.tab==='cpu'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['CPU Statistics']),barTable([{name:'Average',v:m.cpuAvg+'%'},{name:'Maximum',v:m.cpuMax+'%'},{name:'p95',v:m.cpuP95+'%'},{name:'Minimum',v:m.cpuMin+'%'}])]));
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['Daily Trend']),cpuTable(m.chartData)]));
+    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
+    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['CPU Statistics']),barTbl([{name:'Average',v:m.cpuAvg+'%'},{name:'Maximum',v:m.cpuMax+'%'},{name:'p95',v:m.cpuP95+'%'},{name:'Minimum',v:m.cpuMin+'%'}])]));
+    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['Daily Trend']),cpuTbl(m.chart)]));
     content.appendChild(g);
   }
+
   if(S.tab==='disk'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['OS Disk']),barTable([{name:'Read MB/s',v:m.avgDiskR},{name:'Write MB/s',v:m.avgDiskW},{name:'Read IOPS avg',v:m.avgROps},{name:'Write IOPS avg',v:m.avgWOps},{name:'Read IOPS peak',v:m.maxROps},{name:'Write IOPS peak',v:m.maxWOps}])]));
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['Data Disk']),barTable([{name:'Read MB/s',v:m.avgDdR},{name:'Write MB/s',v:m.avgDdW},{name:'Read IOPS',v:m.avgDdROps},{name:'Write IOPS',v:m.avgDdWOps}])]));
-    var diskCard=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Attached Disks'])]);
-    var dg=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:'8px'}});
-    disks.forEach(function(d,i){
+    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
+    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['OS Disk']),barTbl([{name:'Read MB/s',v:m.avgDiskR},{name:'Write MB/s',v:m.avgDiskW},{name:'Read IOPS avg',v:m.avgROps},{name:'Write IOPS avg',v:m.avgWOps},{name:'Read IOPS peak',v:m.maxROps},{name:'Write IOPS peak',v:m.maxWOps}])]));
+    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['Data Disk']),barTbl([{name:'Read MB/s',v:m.avgDdR},{name:'Write MB/s',v:m.avgDdW},{name:'Read IOPS',v:m.avgDdROps},{name:'Write IOPS',v:m.avgDdWOps}])]));
+    var dkCard=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Attached Disks'])],{gridColumn:'1 / -1'});
+    var dkGrid=div({display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:'8px'});
+    allDisks.forEach(function(d,i){
       var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      dg.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
-         el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},[(d.diskSizeGB?d.diskSizeGB+' GB - ':'')+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])]));
+      dkGrid.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'10px'},[
+        div({fontWeight:'700',fontSize:'13px'},[d.name||'(unnamed)']),
+        div({color:'#6b7280',fontSize:'12px',marginTop:'2px'},[(d.diskSizeGB?d.diskSizeGB+' GB - ':'')+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])
+      ]));
     });
-    diskCard.appendChild(dg);
-    diskCard.style.gridColumn='1/-1';
-    g.appendChild(diskCard);
+    dkCard.appendChild(dkGrid);
+    g.appendChild(dkCard);
     content.appendChild(g);
   }
+
   if(S.tab==='network'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['7-Day Network Totals']),barTable([{name:'Inbound GB',v:m.totIn},{name:'Outbound GB',v:m.totOut}])]));
-    var nc=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Network Summary'])]);
-    [['Total Inbound',m.totIn+' GB'],['Total Outbound',m.totOut+' GB'],['Ratio In:Out',m.totOut>0?'1:'+r2(m.totOut/Math.max(m.totIn,0.01)):'N/A'],['Est. egress','~$'+r2(m.totOut*0.087)]].forEach(function(x){nc.appendChild(rowEl(x[0],x[1]));});
-    nc.appendChild(el('div',{style:{marginTop:'10px',fontSize:'11px',color:'#9ca3af'}},['Egress at $0.087/GB West Europe estimate']));
+    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
+    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['7-Day Network Totals']),barTbl([{name:'Inbound GB',v:m.totIn},{name:'Outbound GB',v:m.totOut}])]));
+    var nc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Network Summary'])]);
+    [['Total Inbound',m.totIn+' GB'],['Total Outbound',m.totOut+' GB'],['Ratio In:Out',m.totOut>0?'1:'+r2(m.totOut/Math.max(m.totIn,0.01)):'N/A'],['Est. egress','~$'+r2(m.totOut*0.087)]].forEach(function(x){nc.appendChild(rowItem(x[0],x[1]));});
+    nc.appendChild(div({marginTop:'10px',fontSize:'11px',color:'#9ca3af'},['Egress at $0.087/GB West Europe estimate']));
     g.appendChild(nc);
     content.appendChild(g);
   }
+
   if(S.tab==='recommendations'){
-    var list=el('div',{style:{display:'flex',flexDirection:'column',gap:'13px'}});
+    var list=div({display:'flex',flexDirection:'column',gap:'13px'});
     rep.recs.forEach(function(r){
       var s=SEV[r.sev];
-      var inner=el('div',{style:{flex:'1'}},
-        [el('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'5px'}},
-          [el('span',{style:{fontWeight:'800',fontSize:'14px',color:'#111827'}},[r.title]),
-           el('span',{style:{background:'#f3f4f6',color:'#374151',fontSize:'11px',fontWeight:'600',padding:'2px 7px',borderRadius:'99px'}},[r.cat])]),
-         el('p',{style:{margin:'0 0 7px',fontSize:'13px',color:'#4b5563',lineHeight:'1.5'}},[r.detail]),
-         el('div',{style:{fontSize:'13px',color:'#374151'}},[el('strong',{},'Action: '),r.action]),
-         r.savings?el('div',{style:{marginTop:'5px',fontSize:'13px',color:'#059669',fontWeight:'700'}},['Savings: '+r.savings]):null
-        ].filter(Boolean));
-      list.appendChild(el('div',{style:{background:s.bg,borderRadius:'12px',border:'1px solid '+s.bd,padding:'18px',borderLeft:'5px solid '+s.tx}},
-        [el('div',{style:{display:'flex',gap:'13px',alignItems:'flex-start'}},
-          [el('span',{style:{background:s.tx,color:'white',fontSize:'10px',fontWeight:'800',padding:'3px 8px',borderRadius:'99px',whiteSpace:'nowrap',marginTop:'2px',flexShrink:'0'}},[s.lbl]),inner])]));
+      var inner=div({flex:'1'},[
+        div({display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'5px'},[
+          h('span',{style:{fontWeight:'800',fontSize:'14px',color:'#111827'}},[r.title]),
+          h('span',{style:{background:'#f3f4f6',color:'#374151',fontSize:'11px',fontWeight:'600',padding:'2px 7px',borderRadius:'99px'}},[r.cat])
+        ]),
+        h('p',{style:{margin:'0 0 7px',fontSize:'13px',color:'#4b5563',lineHeight:'1.5'}},[r.detail]),
+        div({fontSize:'13px',color:'#374151'},[h('strong',{},['Action: ']),r.action]),
+        r.savings?div({marginTop:'5px',fontSize:'13px',color:'#059669',fontWeight:'700'},['Savings: '+r.savings]):null
+      ].filter(Boolean));
+      list.appendChild(div({background:s.bg,borderRadius:'12px',border:'1px solid '+s.bd,padding:'18px',borderLeft:'5px solid '+s.tx},[
+        div({display:'flex',gap:'13px',alignItems:'flex-start'},[
+          h('span',{style:{background:s.tx,color:'white',fontSize:'10px',fontWeight:'800',padding:'3px 8px',borderRadius:'99px',whiteSpace:'nowrap',marginTop:'2px'}},[s.lb]),
+          inner
+        ])
+      ]));
     });
     content.appendChild(list);
   }
+
   if(S.tab==='details'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    var vmConf=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['VM Configuration'])]);
+    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
+    var vc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['VM Configuration'])]);
     var imgRef=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.imageReference;
-    var osDiskSku=osDiskObj&&osDiskObj.managedDisk&&osDiskObj.managedDisk.storageAccountType;
+    var osDiskSku=osDisk&&osDisk.managedDisk&&osDisk.managedDisk.storageAccountType;
     [['Name',vd&&vd.name],['Resource Group',S.selRG],['Location',vd&&vd.location],
      ['VM Size',m.vmSize],['vCPU / RAM',m.si.v+' vCPU / '+m.si.r+' GB'],['OS',os],
      ['OS Disk SKU',osDiskSku||'--'],['Image',(imgRef&&imgRef.offer)||'Custom'],
      ['Power State',pw],['Provisioning',vd&&vd.properties&&vd.properties.provisioningState],
      ['Est. Cost','~$'+rep.monthlyCost+'/mo']
-    ].forEach(function(x){vmConf.appendChild(rowEl(x[0],String(x[1]||'--')));});
-    g.appendChild(vmConf);
-    var right=el('div',{style:{display:'flex',flexDirection:'column',gap:'16px'}});
-    var tagCard=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Tags'])]);
-    if(Object.keys(tags).length===0){tagCard.appendChild(el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['No tags found.']));}
-    else{Object.keys(tags).forEach(function(k){tagCard.appendChild(rowEl(k,tags[k]));});}
-    var diskCard2=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Attached Disks'])]);
-    disks.forEach(function(d,i){
+    ].forEach(function(x){vc.appendChild(rowItem(x[0],String(x[1]||'--')));});
+    g.appendChild(vc);
+    var right=div({display:'flex',flexDirection:'column',gap:'16px'});
+    var tc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Tags'])]);
+    if(!Object.keys(tags).length){tc.appendChild(div({color:'#9ca3af',fontSize:'13px'},['No tags found.']));}
+    else{Object.keys(tags).forEach(function(k){tc.appendChild(rowItem(k,tags[k]));});}
+    var dc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Attached Disks'])]);
+    allDisks.forEach(function(d,i){
       var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      diskCard2.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
-         el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},[(d.diskSizeGB?d.diskSizeGB+' GB':'?')+' - '+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])]));
+      dc.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'10px',marginBottom:'8px'},[
+        div({fontWeight:'700',fontSize:'13px'},[d.name||'(unnamed)']),
+        div({color:'#6b7280',fontSize:'12px',marginTop:'2px'},[(d.diskSizeGB?d.diskSizeGB+' GB':'?')+' - '+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])
+      ]));
     });
-    right.appendChild(tagCard);right.appendChild(diskCard2);
+    right.appendChild(tc);right.appendChild(dc);
     g.appendChild(right);
     content.appendChild(g);
   }
@@ -622,837 +780,8 @@ function renderAnalyze(){
   return wrap;
 }
 
-// ── Boot ──────────────────────────────────────────────────
-handleCallback().then(function(){render();});
-</script>
-</body>
-</html>
-,title:'Recommended: '+rs.size,detail:m.vmSize+' -> '+rs.size+'. '+rs.reason,action:'Resize via Azure Portal -> VM -> Size.',savings:'~'+sp+'% (~  recs.push({sev:'info',cat:'Cost',icon:'i',title:'Consider Reserved Instances',detail:'1 or 3-year reservations unlock major discounts.',action:'Azure Portal -> Reservations.',savings:'Up to 40-72% vs PAYG'});
-  recs.push({sev:'info',cat:'Governance',icon:'i',title:'Enable auto-shutdown',detail:'Reduces idle costs for non-prod VMs.',action:'Azure Portal -> VM -> Auto-shutdown.',savings:'Up to 60%'});
-  var tags=detail.tags||{},missing=['Environment','Owner','CostCenter','Application'].filter(function(t){return !tags[t];});
-  if(missing.length){score-=5;recs.push({sev:'low',cat:'Governance',icon:'i',title:'Missing tags: '+missing.join(', '),detail:'Untagged resources make cost attribution difficult.',action:'Add standard tags.',savings:'Better governance'});}
-  recs.push({sev:'info',cat:'Tooling',icon:'i',title:'Enable Azure Advisor',detail:'Continuously surfaces recommendations.',action:'Navigate to Azure Advisor.',savings:'Ongoing'});
-  return{score:Math.max(0,Math.round(score)),recs:recs,monthlyCost:r2(m.si.c*730),rs:rs};
-}
-
-function rightSize(m){
-  var tc=m.si.v,tr=m.si.r;
-  if(m.cpuAvg<10)tc=Math.max(1,Math.floor(m.si.v/2));else if(m.cpuAvg>80)tc=m.si.v*2;
-  if(m.memPct!==null){if(m.memPct<20)tr=Math.max(1,Math.floor(m.si.r/2));else if(m.memPct>85)tr=m.si.r*2;}
-  var best=null,bd=Infinity;
-  var keys=Object.keys(VM_CATALOG);
-  for(var i=0;i<keys.length;i++){
-    var sz=keys[i],info=VM_CATALOG[sz];
-    if(info.v>=tc&&info.r>=tr){var d=(info.v-tc)*2+(info.r-tr);if(d<bd){bd=d;best=sz;}}
-  }
-  return best?{size:best,reason:'Target: '+tc+' vCPU / '+tr+' GB RAM.'}:null;
-}
-
-// ── DOM helpers ───────────────────────────────────────────
-function el(tag,props,children){
-  props=props||{};children=children||[];
-  var e=document.createElement(tag);
-  Object.keys(props).forEach(function(k){
-    var v=props[k];
-    if(k==='style'&&typeof v==='object')Object.assign(e.style,v);
-    else if(k==='className')e.className=v;
-    else if(k.indexOf('on')===0)e.addEventListener(k.slice(2).toLowerCase(),v);
-    else e.setAttribute(k,v);
-  });
-  var kids=Array.isArray(children)?children:[children];
-  kids.forEach(function(c){if(c!=null)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});
-  return e;
-}
-function card(children,style){
-  style=style||{};
-  return el('div',{style:Object.assign({background:'white',borderRadius:'12px',border:'1px solid #e5e7eb',boxShadow:'0 1px 3px rgba(0,0,0,.06)',padding:'20px'},style)},children);
-}
-function mkBtn(label,onClick,opts){
-  opts=opts||{};
-  var variant=opts.variant||'primary',disabled=opts.disabled||false,sm=opts.sm||false,full=opts.full||false;
-  var th={primary:{background:'#2563eb',color:'white',border:'none'},secondary:{background:'white',color:'#374151',border:'1px solid #d1d5db'},ghost:{background:'transparent',color:'#6b7280',border:'none'}};
-  var b=el('button',{style:Object.assign({},th[variant],{borderRadius:'8px',cursor:disabled?'not-allowed':'pointer',fontWeight:'600',fontSize:sm?'12px':'14px',padding:sm?'7px 14px':'11px 22px',opacity:disabled?0.55:1,width:full?'100%':'auto',transition:'all .15s'})},[label]);
-  if(!disabled&&onClick)b.addEventListener('click',onClick);
-  return b;
-}
-function errBox(msg){
-  if(!msg)return null;
-  return el('div',{style:{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'13px',color:'#dc2626'}},['Error: '+msg]);
-}
-function statCard(label,value,unit,sub,color,warn){
-  unit=unit||'';sub=sub||'';color=color||'#1d4ed8';warn=warn||false;
-  return el('div',{style:{background:'white',borderRadius:'12px',border:'1.5px solid '+(warn?'#fca5a5':'#e5e7eb'),padding:'16px 18px',textAlign:'center'}},
-    [el('div',{style:{fontSize:'11px',color:'#6b7280',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'6px'}},[label]),
-     el('div',{style:{fontSize:'26px',fontWeight:'900',color:color,lineHeight:'1'}},[String(value),el('span',{style:{fontSize:'13px',fontWeight:'500',color:'#6b7280',marginLeft:'2px'}},unit?[unit]:[])]),
-     sub?el('div',{style:{fontSize:'11px',color:'#9ca3af',marginTop:'4px'}},[sub]):null].filter(Boolean));
-}
-function rowEl(k,v){
-  return el('div',{style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #f3f4f6',fontSize:'13px'}},
-    [el('span',{style:{color:'#6b7280'}},[k]),
-     el('span',{style:{fontWeight:'600',color:'#111827',maxWidth:'250px',textAlign:'right',wordBreak:'break-all'}},[String(v||'--')])]);
-}
-function barTable(rows){
-  var vals=rows.map(function(r){return parseFloat(r.v)||0;});
-  var mx=Math.max.apply(null,[1].concat(vals));
-  var t=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  var tb=el('tbody');
-  rows.forEach(function(r){
-    var w=Math.round((parseFloat(r.v)||0)/mx*100);
-    var bar=el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'80px'}},
-      [el('div',{style:{height:'8px',borderRadius:'4px',background:'#2563eb',width:w+'%',minWidth:'2px'}})]);
-    tb.appendChild(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
-      [el('td',{style:{padding:'7px 8px',color:'#6b7280',whiteSpace:'nowrap'}},[r.name]),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:'700',color:'#111827'}},[String(r.v)]),
-       el('td',{style:{padding:'7px 8px',minWidth:'100px'}},[bar])]));
-  });
-  t.appendChild(tb);return t;
-}
-function cpuTable(data){
-  var t=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  t.appendChild(el('thead',{},[el('tr',{},[
-    el('th',{style:{textAlign:'left',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Date']),
-    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Avg %']),
-    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Max %']),
-    el('th',{style:{padding:'6px 8px',borderBottom:'2px solid #e5e7eb'}},['Trend'])])]));
-  var tb=el('tbody');
-  if(!data.length)tb.appendChild(el('tr',{},[el('td',{colspan:'4',style:{padding:'12px',color:'#9ca3af',textAlign:'center'}},['No data'])]));
-  data.forEach(function(d){
-    var col=d.avgCPU>80?'#dc2626':d.avgCPU>50?'#f59e0b':'#2563eb';
-    var bar=el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'100px'}},
-      [el('div',{style:{height:'8px',borderRadius:'4px',background:col,width:Math.round(d.avgCPU)+'%',minWidth:'2px'}})]);
-    tb.appendChild(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
-      [el('td',{style:{padding:'7px 8px',fontWeight:'600',color:'#374151'}},[d.date]),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',color:col,fontWeight:'700'}},[d.avgCPU+'%']),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',color:'#9ca3af'}},[d.maxCPU+'%']),
-       el('td',{style:{padding:'7px 8px'}},[bar])]));
-  });
-  t.appendChild(tb);return t;
-}
-
-// ── Render ────────────────────────────────────────────────
-function render(){
-  var app=$('app');app.innerHTML='';
-  if(S.phase==='auth')app.appendChild(renderAuth());
-  else if(S.phase==='browse')app.appendChild(renderBrowse());
-  else if(S.phase==='analyze'&&S.report&&S.metrics)app.appendChild(renderAnalyze());
-  else app.appendChild(el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280'}},['Loading...']));
-}
-
-// ── AUTH ──────────────────────────────────────────────────
-function renderAuth(){
-  var wrap=el('div',{style:{minHeight:'100vh',background:'linear-gradient(145deg,#0f172a 0%,#1e3a8a 60%,#1d4ed8 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}});
-  var inner=el('div',{style:{width:'100%',maxWidth:'420px'}});
-  inner.appendChild(el('div',{style:{textAlign:'center',marginBottom:'28px',color:'white'}},
-    [el('div',{style:{fontSize:'52px',marginBottom:'8px'}},['Azure']),
-     el('h1',{style:{fontSize:'26px',fontWeight:'900',color:'white',marginBottom:'6px'}},['Azure VM Optimizer']),
-     el('p',{style:{color:'#93c5fd',fontSize:'13px'}},['Analyze and optimize your Azure Virtual Machines'])]));
-  var c=card([],{padding:'28px'});
-  if(S.busy){
-    c.appendChild(el('div',{style:{textAlign:'center',padding:'20px 0',color:'#6b7280'}},
-      [el('div',{style:{fontSize:'32px',marginBottom:'12px'}},['...']),
-       el('div',{style:{fontWeight:'600',fontSize:'14px',color:'#374151'}},['Completing sign-in...'])]));
-  } else {
-    var eb=errBox(S.err);if(eb)c.appendChild(eb);
-    var msBtn=el('button',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',
-      width:'100%',padding:'13px 20px',background:'white',border:'1.5px solid #d1d5db',
-      borderRadius:'10px',cursor:'pointer',fontSize:'15px',fontWeight:'600',color:'#374151',
-      boxShadow:'0 1px 3px rgba(0,0,0,.1)',marginBottom:'20px',transition:'all .15s'}});
-    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('width','21');svg.setAttribute('height','21');svg.setAttribute('viewBox','0 0 21 21');
-    [['#f25022',1,1],['#7fba00',11,1],['#00a4ef',1,11],['#ffb900',11,11]].forEach(function(x){
-      var rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
-      rect.setAttribute('x',x[1]);rect.setAttribute('y',x[2]);rect.setAttribute('width','9');rect.setAttribute('height','9');rect.setAttribute('fill',x[0]);svg.appendChild(rect);
-    });
-    msBtn.appendChild(svg);msBtn.appendChild(document.createTextNode('Sign in with Microsoft'));
-    msBtn.addEventListener('click',startLogin);
-    c.appendChild(msBtn);
-    c.appendChild(el('div',{style:{textAlign:'center',fontSize:'12px',color:'#9ca3af',marginBottom:'16px'}},['Supports MFA - Redirects to Microsoft login - No credentials stored']));
-    c.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'12px 14px',fontSize:'12px',color:'#6b7280'}},
-      ['First time? You need an App Registration in Entra ID with this page URL as the SPA Redirect URI and Azure Service Management user_impersonation permission granted.']));
-  }
-  inner.appendChild(c);
-  wrap.appendChild(inner);
-  return wrap;
-}
-
-// ── BROWSE ────────────────────────────────────────────────
-function renderBrowse(){
-  function go(fn){
-    setState({busy:true,err:null});
-    fn().then(function(){setState({busy:false});}).catch(function(e){setState({busy:false,err:e.message});});
-  }
-  var wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
-  var hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
-  var soBtn=mkBtn('Sign out',function(){setState({token:null,phase:'auth',subs:[],selSub:null,rgs:[],selRG:null,vms:[]});},{variant:'secondary',sm:true});
-  soBtn.style.marginLeft='auto';
-  hdr.appendChild(el('span',{style:{fontSize:'22px'}},['VM']));
-  hdr.appendChild(el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},['Azure VM Optimizer']));
-  hdr.appendChild(el('span',{style:{background:'#dcfce7',color:'#15803d',fontSize:'11px',fontWeight:'700',padding:'2px 10px',borderRadius:'99px'}},['Signed in']));
-  if(S.busy)hdr.appendChild(el('span',{style:{color:'#6b7280',fontSize:'12px'}},['Loading...']));
-  hdr.appendChild(soBtn);
-
-  var body=el('div',{style:{maxWidth:'960px',margin:'0 auto',padding:'24px'}});
-  var eb=errBox(S.err);if(eb)body.appendChild(eb);
-
-  var grid=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'}});
-
-  var filtSubs=S.subs.filter(function(s){
-    return s.displayName.toLowerCase().indexOf(S.subQ.toLowerCase())>=0||s.subscriptionId.toLowerCase().indexOf(S.subQ.toLowerCase())>=0;
-  });
-  var subList=el('div',{style:{display:'flex',flexDirection:'column',gap:'7px',maxHeight:'320px',overflowY:'auto'}});
-  filtSubs.forEach(function(s){
-    var active=S.selSub&&S.selSub.subscriptionId===s.subscriptionId;
-    var b=el('button',{style:{textAlign:'left',padding:'10px 13px',borderRadius:'8px',border:'1.5px solid',borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px'}},
-      [el('div',{style:{fontWeight:'700',color:'#111827'}},[s.displayName]),
-       el('div',{style:{color:'#9ca3af',fontSize:'11px',fontFamily:'monospace',marginTop:'2px'}},[s.subscriptionId])]);
-    b.addEventListener('click',function(){
-      go(async function(){
-        setState({selSub:s,rgs:[],vms:[],selRG:null});
-        var r=await az(MGMT+'/subscriptions/'+s.subscriptionId+'/resourcegroups?api-version=2023-07-01');
-        setState({rgs:r.value||[]});
-      });
-    });
-    subList.appendChild(b);
-  });
-  var srch=el('input',{type:'text',value:S.subQ,placeholder:'Search subscriptions...',
-    style:{width:'100%',padding:'8px 12px',border:'1.5px solid #e5e7eb',borderRadius:'8px',fontSize:'12px',marginBottom:'10px',boxSizing:'border-box'}});
-  srch.addEventListener('input',function(e){S.subQ=e.target.value;render();});
-  grid.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Subscription']),srch,subList]));
-
-  if(S.selSub){
-    var rgList=el('div',{style:{display:'flex',flexDirection:'column',gap:'7px',maxHeight:'320px',overflowY:'auto'}});
-    S.rgs.forEach(function(rg){
-      var active=S.selRG===rg.name;
-      var b=el('button',{style:{textAlign:'left',padding:'9px 13px',borderRadius:'8px',border:'1.5px solid',borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px',fontWeight:'600',color:'#111827'}},
-        [rg.name,el('span',{style:{color:'#9ca3af',fontWeight:'400',fontSize:'11px',marginLeft:'6px'}},[rg.location])]);
-      b.addEventListener('click',function(){
-        go(async function(){
-          setState({selRG:rg.name,vms:[]});
-          var sid=S.selSub.subscriptionId;var found=[];
-          var apis=['2024-03-01','2023-09-01','2023-03-01'];
-          for(var i=0;i<apis.length;i++){
-            try{var r=await az(MGMT+'/subscriptions/'+sid+'/resourceGroups/'+encodeURIComponent(rg.name)+'/providers/Microsoft.Compute/virtualMachines?api-version='+apis[i]);found=r.value||[];if(found.length)break;}catch(e){}
-          }
-          if(!found.length){
-            var r2=await az(MGMT+'/subscriptions/'+sid+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01');
-            found=(r2.value||[]).filter(function(v){var p=v.id.split('/'),i=p.findIndex(function(x){return x.toLowerCase()==='resourcegroups';});return i>=0&&p[i+1]&&p[i+1].toLowerCase()===rg.name.toLowerCase();});
-          }
-          setState({vms:found,err:found.length?null:'No VMs found in "'+rg.name+'".'});
-        });
-      });
-      rgList.appendChild(b);
-    });
-    grid.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Resource Group']),rgList]));
-  }
-  body.appendChild(grid);
-
-  if(S.selSub){
-    var allBtn=mkBtn('Show ALL VMs in subscription',function(){
-      go(async function(){
-        setState({selRG:'All VMs',vms:[]});
-        var r=await az(MGMT+'/subscriptions/'+S.selSub.subscriptionId+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01');
-        var found=r.value||[];setState({vms:found,err:found.length?null:'No VMs found.'});
-      });
-    },{variant:'secondary',sm:true});
-    body.appendChild(el('div',{style:{marginBottom:'14px'}},[allBtn]));
-  }
-
-  if(S.vms.length>0){
-    var vmGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(270px,1fr))',gap:'12px'}});
-    S.vms.forEach(function(vm){
-      var sz=(vm.properties&&vm.properties.hardwareProfile&&vm.properties.hardwareProfile.vmSize)||'';
-      var info=VM_CATALOG[sz];
-      var vmos=(vm.properties&&vm.properties.storageProfile&&vm.properties.storageProfile.osDisk&&vm.properties.storageProfile.osDisk.osType)||'Linux';
-      var parts=vm.id.split('/'),rgi=parts.findIndex(function(p){return p.toLowerCase()==='resourcegroups';});
-      var vmRG=rgi>=0?parts[rgi+1]:'';
-      var aBtn=mkBtn(S.busy?'Analyzing...':'Analyze and Optimize',function(){
-        go(async function(){
-          setState({selVM:vm,report:null,metrics:null});
-          var detail=await az(MGMT+vm.id+'?api-version=2023-07-01&$expand=instanceView');
-          setState({vmDetail:detail});
-          var res=await fetchMetrics(vm.id,S.token);
-          var proc=processMetrics(res.all,res.memMetric,detail);
-          setState({metrics:proc,report:buildReport(proc,detail),phase:'analyze',tab:'overview'});
-        });
-      },{sm:true,disabled:S.busy});
-      vmGrid.appendChild(el('div',{style:{border:'1.5px solid #e5e7eb',borderRadius:'10px',padding:'16px',background:'white'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'14px',color:'#111827',marginBottom:'3px'}},[(vmos==='Windows'?'[Win] ':'[Linux] ')+vm.name]),
-         el('div',{style:{fontSize:'11px',color:'#9ca3af',marginBottom:'6px'}},[vm.location+(vmRG?' - '+vmRG:'')]),
-         el('div',{style:{fontSize:'12px',color:'#374151',marginBottom:'12px'}},
-           [el('strong',{},[sz]),info?el('span',{style:{color:'#6b7280'}},[' - '+info.v+' vCPU - '+info.r+' GB - ~$'+r2(info.c*730)+'/mo']):null].filter(Boolean)),
-         aBtn]));
-    });
-    body.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'14px'}},['Virtual Machines - '+(S.selRG||'')]),vmGrid]));
-  } else if(S.selSub&&!S.busy&&!S.err){
-    body.appendChild(card([el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['Select a resource group or click Show ALL VMs.'])]));
-  }
-
-  wrap.appendChild(hdr);wrap.appendChild(body);
-  return wrap;
-}
-
-// ── ANALYZE ───────────────────────────────────────────────
-function renderAnalyze(){
-  var m=S.metrics,rep=S.report,vd=S.vmDetail;
-  var tags=vd&&vd.tags||{};
-  var os=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk&&vd.properties.storageProfile.osDisk.osType)||'Linux';
-  var statuses=vd&&vd.properties&&vd.properties.instanceView&&vd.properties.instanceView.statuses||[];
-  var pwStatus=statuses.find(function(s){return s.code&&s.code.indexOf('PowerState/')===0;});
-  var pw=(pwStatus&&pwStatus.displayStatus)||'Unknown';
-  var osDiskObj=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk;
-  var dataDisks=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.dataDisks)||[];
-  var disks=[osDiskObj].concat(dataDisks).filter(Boolean);
-  var TABS=['overview','cpu','disk','network','recommendations','details'];
-
-  var wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
-  var hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
-  var pwBadge=el('span',{style:{marginLeft:'auto',background:pw.indexOf('running')>=0?'#dcfce7':'#fef3c7',color:pw.indexOf('running')>=0?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'}},[pw]);
-  hdr.appendChild(mkBtn('Back',function(){setState({phase:'browse'});},{variant:'secondary',sm:true}));
-  hdr.appendChild(el('span',{style:{fontSize:'20px'}},['VM']));
-  hdr.appendChild(el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},[(os==='Windows'?'[Win] ':'[Linux] ')+(S.selVM&&S.selVM.name||'')]));
-  hdr.appendChild(el('span',{style:{color:'#6b7280',fontSize:'12px'}},[m.vmSize+' - '+(S.selVM&&S.selVM.location||'')]));
-  hdr.appendChild(pwBadge);
-
-  var body=el('div',{style:{maxWidth:'1120px',margin:'0 auto',padding:'24px'}});
-
-  var banner=el('div',{style:{display:'grid',gridTemplateColumns:'180px 1fr',gap:'16px',marginBottom:'20px'}});
-  var sc=card([
-    el('div',{style:{fontSize:'11px',fontWeight:'700',color:'#6b7280',marginBottom:'8px'}},['OPTIMIZATION SCORE']),
-    el('div',{style:{fontSize:'68px',fontWeight:'900',color:scC(rep.score),lineHeight:'1'}},[String(rep.score)]),
-    el('div',{style:{fontSize:'12px',color:scC(rep.score),marginTop:'6px',fontWeight:'700'}},[rep.score>=80?'Well Optimized':rep.score>=60?'Needs Attention':'Needs Work']),
-    el('div',{style:{marginTop:'10px',fontSize:'12px',color:'#374151'}},['~$'+rep.monthlyCost+'/month'])
-  ],{textAlign:'center',background:scBg(rep.score)});
-  var chips=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'7px',marginBottom:'8px'}});
-  rep.recs.forEach(function(r){var s=SEV[r.sev];chips.appendChild(el('span',{style:{background:s.bg,color:s.tx,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'99px',border:'1px solid '+s.bd}},[r.title]));});
-  var sc2=card([el('div',{style:{fontSize:'13px',fontWeight:'700',color:'#111827',marginBottom:'10px'}},[rep.recs.length+' Recommendations - 7-day analysis']),chips]);
-  if(rep.rs&&rep.rs.size!==m.vmSize)sc2.appendChild(el('div',{style:{marginTop:'8px',padding:'9px 12px',background:'#f0fdf4',borderRadius:'8px',fontSize:'12px',color:'#15803d',fontWeight:'600'}},['Right-size to '+rep.rs.size+' - '+rep.rs.reason]));
-  banner.appendChild(sc);banner.appendChild(sc2);
-  body.appendChild(banner);
-
-  var tabBar=el('div',{style:{display:'flex',gap:'3px',marginBottom:'20px',background:'white',borderRadius:'10px',padding:'5px',border:'1px solid #e5e7eb',width:'fit-content'}});
-  TABS.forEach(function(t){
-    var b=el('button',{className:'tab-btn'+(S.tab===t?' active':'')},[t.charAt(0).toUpperCase()+t.slice(1)]);
-    b.addEventListener('click',function(){setState({tab:t});});
-    tabBar.appendChild(b);
-  });
-  body.appendChild(tabBar);
-
-  var content=el('div');
-
-  if(S.tab==='overview'){
-    var g1=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
-    g1.appendChild(statCard('Avg CPU',m.cpuAvg,'%','Max '+m.cpuMax+'% p95 '+m.cpuP95+'%',m.cpuAvg>80?'#dc2626':m.cpuAvg<10?'#d97706':'#2563eb',m.cpuAvg>85||m.cpuAvg<5));
-    g1.appendChild(statCard('Memory',m.memPct!=null?m.memPct:'N/A',m.memPct?'%':'',m.memPct?'Avg 7 days':'Linux/unavailable',!m.memPct?'#9ca3af':m.memPct>85?'#dc2626':'#2563eb',m.memPct>85));
-    g1.appendChild(statCard('Disk Read',m.avgDiskR,'MB/s',m.avgROps+' avg IOPS','#7c3aed'));
-    g1.appendChild(statCard('Disk Write',m.avgDiskW,'MB/s',m.avgWOps+' avg IOPS','#7c3aed'));
-    var g2=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
-    g2.appendChild(statCard('Data Disk R',m.avgDdR,'MB/s',m.avgDdROps+' IOPS','#0891b2'));
-    g2.appendChild(statCard('Data Disk W',m.avgDdW,'MB/s',m.avgDdWOps+' IOPS','#0891b2'));
-    g2.appendChild(statCard('Net In 7d',m.totIn,'GB','','#059669'));
-    g2.appendChild(statCard('Net Out 7d',m.totOut,'GB','','#059669'));
-    content.appendChild(g1);content.appendChild(g2);
-    content.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',color:'#374151',marginBottom:'14px'}},['CPU Utilization - Daily Trend (7 days)']),cpuTable(m.chartData)]));
-  }
-  if(S.tab==='cpu'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['CPU Statistics']),barTable([{name:'Average',v:m.cpuAvg+'%'},{name:'Maximum',v:m.cpuMax+'%'},{name:'p95',v:m.cpuP95+'%'},{name:'Minimum',v:m.cpuMin+'%'}])]));
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['Daily Trend']),cpuTable(m.chartData)]));
-    content.appendChild(g);
-  }
-  if(S.tab==='disk'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['OS Disk']),barTable([{name:'Read MB/s',v:m.avgDiskR},{name:'Write MB/s',v:m.avgDiskW},{name:'Read IOPS avg',v:m.avgROps},{name:'Write IOPS avg',v:m.avgWOps},{name:'Read IOPS peak',v:m.maxROps},{name:'Write IOPS peak',v:m.maxWOps}])]));
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['Data Disk']),barTable([{name:'Read MB/s',v:m.avgDdR},{name:'Write MB/s',v:m.avgDdW},{name:'Read IOPS',v:m.avgDdROps},{name:'Write IOPS',v:m.avgDdWOps}])]));
-    var diskCard=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Attached Disks'])]);
-    var dg=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:'8px'}});
-    disks.forEach(function(d,i){
-      var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      dg.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
-         el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},[(d.diskSizeGB?d.diskSizeGB+' GB - ':'')+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])]));
-    });
-    diskCard.appendChild(dg);
-    diskCard.style.gridColumn='1/-1';
-    g.appendChild(diskCard);
-    content.appendChild(g);
-  }
-  if(S.tab==='network'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['7-Day Network Totals']),barTable([{name:'Inbound GB',v:m.totIn},{name:'Outbound GB',v:m.totOut}])]));
-    var nc=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Network Summary'])]);
-    [['Total Inbound',m.totIn+' GB'],['Total Outbound',m.totOut+' GB'],['Ratio In:Out',m.totOut>0?'1:'+r2(m.totOut/Math.max(m.totIn,0.01)):'N/A'],['Est. egress','~$'+r2(m.totOut*0.087)]].forEach(function(x){nc.appendChild(rowEl(x[0],x[1]));});
-    nc.appendChild(el('div',{style:{marginTop:'10px',fontSize:'11px',color:'#9ca3af'}},['Egress at $0.087/GB West Europe estimate']));
-    g.appendChild(nc);
-    content.appendChild(g);
-  }
-  if(S.tab==='recommendations'){
-    var list=el('div',{style:{display:'flex',flexDirection:'column',gap:'13px'}});
-    rep.recs.forEach(function(r){
-      var s=SEV[r.sev];
-      var inner=el('div',{style:{flex:'1'}},
-        [el('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'5px'}},
-          [el('span',{style:{fontWeight:'800',fontSize:'14px',color:'#111827'}},[r.title]),
-           el('span',{style:{background:'#f3f4f6',color:'#374151',fontSize:'11px',fontWeight:'600',padding:'2px 7px',borderRadius:'99px'}},[r.cat])]),
-         el('p',{style:{margin:'0 0 7px',fontSize:'13px',color:'#4b5563',lineHeight:'1.5'}},[r.detail]),
-         el('div',{style:{fontSize:'13px',color:'#374151'}},[el('strong',{},'Action: '),r.action]),
-         r.savings?el('div',{style:{marginTop:'5px',fontSize:'13px',color:'#059669',fontWeight:'700'}},['Savings: '+r.savings]):null
-        ].filter(Boolean));
-      list.appendChild(el('div',{style:{background:s.bg,borderRadius:'12px',border:'1px solid '+s.bd,padding:'18px',borderLeft:'5px solid '+s.tx}},
-        [el('div',{style:{display:'flex',gap:'13px',alignItems:'flex-start'}},
-          [el('span',{style:{background:s.tx,color:'white',fontSize:'10px',fontWeight:'800',padding:'3px 8px',borderRadius:'99px',whiteSpace:'nowrap',marginTop:'2px',flexShrink:'0'}},[s.lbl]),inner])]));
-    });
-    content.appendChild(list);
-  }
-  if(S.tab==='details'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    var vmConf=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['VM Configuration'])]);
-    var imgRef=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.imageReference;
-    var osDiskSku=osDiskObj&&osDiskObj.managedDisk&&osDiskObj.managedDisk.storageAccountType;
-    [['Name',vd&&vd.name],['Resource Group',S.selRG],['Location',vd&&vd.location],
-     ['VM Size',m.vmSize],['vCPU / RAM',m.si.v+' vCPU / '+m.si.r+' GB'],['OS',os],
-     ['OS Disk SKU',osDiskSku||'--'],['Image',(imgRef&&imgRef.offer)||'Custom'],
-     ['Power State',pw],['Provisioning',vd&&vd.properties&&vd.properties.provisioningState],
-     ['Est. Cost','~$'+rep.monthlyCost+'/mo']
-    ].forEach(function(x){vmConf.appendChild(rowEl(x[0],String(x[1]||'--')));});
-    g.appendChild(vmConf);
-    var right=el('div',{style:{display:'flex',flexDirection:'column',gap:'16px'}});
-    var tagCard=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Tags'])]);
-    if(Object.keys(tags).length===0){tagCard.appendChild(el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['No tags found.']));}
-    else{Object.keys(tags).forEach(function(k){tagCard.appendChild(rowEl(k,tags[k]));});}
-    var diskCard2=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Attached Disks'])]);
-    disks.forEach(function(d,i){
-      var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      diskCard2.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
-         el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},[(d.diskSizeGB?d.diskSizeGB+' GB':'?')+' - '+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])]));
-    });
-    right.appendChild(tagCard);right.appendChild(diskCard2);
-    g.appendChild(right);
-    content.appendChild(g);
-  }
-
-  body.appendChild(content);
-  wrap.appendChild(hdr);wrap.appendChild(body);
-  return wrap;
-}
-
-// ── Boot ──────────────────────────────────────────────────
-handleCallback().then(function(){render();});
-</script>
-</body>
-</html>
-+sm2+'/mo)});}}
-  recs.push({sev:'info',cat:'Cost',icon:'i',title:'Consider Reserved Instances',detail:'1 or 3-year reservations unlock major discounts.',action:'Azure Portal -> Reservations.',savings:'Up to 40-72% vs PAYG'});
-  recs.push({sev:'info',cat:'Governance',icon:'i',title:'Enable auto-shutdown',detail:'Reduces idle costs for non-prod VMs.',action:'Azure Portal -> VM -> Auto-shutdown.',savings:'Up to 60%'});
-  var tags=detail.tags||{},missing=['Environment','Owner','CostCenter','Application'].filter(function(t){return !tags[t];});
-  if(missing.length){score-=5;recs.push({sev:'low',cat:'Governance',icon:'i',title:'Missing tags: '+missing.join(', '),detail:'Untagged resources make cost attribution difficult.',action:'Add standard tags.',savings:'Better governance'});}
-  recs.push({sev:'info',cat:'Tooling',icon:'i',title:'Enable Azure Advisor',detail:'Continuously surfaces recommendations.',action:'Navigate to Azure Advisor.',savings:'Ongoing'});
-  return{score:Math.max(0,Math.round(score)),recs:recs,monthlyCost:r2(m.si.c*730),rs:rs};
-}
-
-function rightSize(m){
-  var tc=m.si.v,tr=m.si.r;
-  if(m.cpuAvg<10)tc=Math.max(1,Math.floor(m.si.v/2));else if(m.cpuAvg>80)tc=m.si.v*2;
-  if(m.memPct!==null){if(m.memPct<20)tr=Math.max(1,Math.floor(m.si.r/2));else if(m.memPct>85)tr=m.si.r*2;}
-  var best=null,bd=Infinity;
-  var keys=Object.keys(VM_CATALOG);
-  for(var i=0;i<keys.length;i++){
-    var sz=keys[i],info=VM_CATALOG[sz];
-    if(info.v>=tc&&info.r>=tr){var d=(info.v-tc)*2+(info.r-tr);if(d<bd){bd=d;best=sz;}}
-  }
-  return best?{size:best,reason:'Target: '+tc+' vCPU / '+tr+' GB RAM.'}:null;
-}
-
-// ── DOM helpers ───────────────────────────────────────────
-function el(tag,props,children){
-  props=props||{};children=children||[];
-  var e=document.createElement(tag);
-  Object.keys(props).forEach(function(k){
-    var v=props[k];
-    if(k==='style'&&typeof v==='object')Object.assign(e.style,v);
-    else if(k==='className')e.className=v;
-    else if(k.indexOf('on')===0)e.addEventListener(k.slice(2).toLowerCase(),v);
-    else e.setAttribute(k,v);
-  });
-  var kids=Array.isArray(children)?children:[children];
-  kids.forEach(function(c){if(c!=null)e.appendChild(typeof c==='string'?document.createTextNode(c):c);});
-  return e;
-}
-function card(children,style){
-  style=style||{};
-  return el('div',{style:Object.assign({background:'white',borderRadius:'12px',border:'1px solid #e5e7eb',boxShadow:'0 1px 3px rgba(0,0,0,.06)',padding:'20px'},style)},children);
-}
-function mkBtn(label,onClick,opts){
-  opts=opts||{};
-  var variant=opts.variant||'primary',disabled=opts.disabled||false,sm=opts.sm||false,full=opts.full||false;
-  var th={primary:{background:'#2563eb',color:'white',border:'none'},secondary:{background:'white',color:'#374151',border:'1px solid #d1d5db'},ghost:{background:'transparent',color:'#6b7280',border:'none'}};
-  var b=el('button',{style:Object.assign({},th[variant],{borderRadius:'8px',cursor:disabled?'not-allowed':'pointer',fontWeight:'600',fontSize:sm?'12px':'14px',padding:sm?'7px 14px':'11px 22px',opacity:disabled?0.55:1,width:full?'100%':'auto',transition:'all .15s'})},[label]);
-  if(!disabled&&onClick)b.addEventListener('click',onClick);
-  return b;
-}
-function errBox(msg){
-  if(!msg)return null;
-  return el('div',{style:{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'13px',color:'#dc2626'}},['Error: '+msg]);
-}
-function statCard(label,value,unit,sub,color,warn){
-  unit=unit||'';sub=sub||'';color=color||'#1d4ed8';warn=warn||false;
-  return el('div',{style:{background:'white',borderRadius:'12px',border:'1.5px solid '+(warn?'#fca5a5':'#e5e7eb'),padding:'16px 18px',textAlign:'center'}},
-    [el('div',{style:{fontSize:'11px',color:'#6b7280',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'6px'}},[label]),
-     el('div',{style:{fontSize:'26px',fontWeight:'900',color:color,lineHeight:'1'}},[String(value),el('span',{style:{fontSize:'13px',fontWeight:'500',color:'#6b7280',marginLeft:'2px'}},unit?[unit]:[])]),
-     sub?el('div',{style:{fontSize:'11px',color:'#9ca3af',marginTop:'4px'}},[sub]):null].filter(Boolean));
-}
-function rowEl(k,v){
-  return el('div',{style:{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #f3f4f6',fontSize:'13px'}},
-    [el('span',{style:{color:'#6b7280'}},[k]),
-     el('span',{style:{fontWeight:'600',color:'#111827',maxWidth:'250px',textAlign:'right',wordBreak:'break-all'}},[String(v||'--')])]);
-}
-function barTable(rows){
-  var vals=rows.map(function(r){return parseFloat(r.v)||0;});
-  var mx=Math.max.apply(null,[1].concat(vals));
-  var t=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  var tb=el('tbody');
-  rows.forEach(function(r){
-    var w=Math.round((parseFloat(r.v)||0)/mx*100);
-    var bar=el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'80px'}},
-      [el('div',{style:{height:'8px',borderRadius:'4px',background:'#2563eb',width:w+'%',minWidth:'2px'}})]);
-    tb.appendChild(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
-      [el('td',{style:{padding:'7px 8px',color:'#6b7280',whiteSpace:'nowrap'}},[r.name]),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:'700',color:'#111827'}},[String(r.v)]),
-       el('td',{style:{padding:'7px 8px',minWidth:'100px'}},[bar])]));
-  });
-  t.appendChild(tb);return t;
-}
-function cpuTable(data){
-  var t=el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  t.appendChild(el('thead',{},[el('tr',{},[
-    el('th',{style:{textAlign:'left',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Date']),
-    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Avg %']),
-    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Max %']),
-    el('th',{style:{padding:'6px 8px',borderBottom:'2px solid #e5e7eb'}},['Trend'])])]));
-  var tb=el('tbody');
-  if(!data.length)tb.appendChild(el('tr',{},[el('td',{colspan:'4',style:{padding:'12px',color:'#9ca3af',textAlign:'center'}},['No data'])]));
-  data.forEach(function(d){
-    var col=d.avgCPU>80?'#dc2626':d.avgCPU>50?'#f59e0b':'#2563eb';
-    var bar=el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'100px'}},
-      [el('div',{style:{height:'8px',borderRadius:'4px',background:col,width:Math.round(d.avgCPU)+'%',minWidth:'2px'}})]);
-    tb.appendChild(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
-      [el('td',{style:{padding:'7px 8px',fontWeight:'600',color:'#374151'}},[d.date]),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',color:col,fontWeight:'700'}},[d.avgCPU+'%']),
-       el('td',{style:{padding:'7px 8px',textAlign:'right',color:'#9ca3af'}},[d.maxCPU+'%']),
-       el('td',{style:{padding:'7px 8px'}},[bar])]));
-  });
-  t.appendChild(tb);return t;
-}
-
-// ── Render ────────────────────────────────────────────────
-function render(){
-  var app=$('app');app.innerHTML='';
-  if(S.phase==='auth')app.appendChild(renderAuth());
-  else if(S.phase==='browse')app.appendChild(renderBrowse());
-  else if(S.phase==='analyze'&&S.report&&S.metrics)app.appendChild(renderAnalyze());
-  else app.appendChild(el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280'}},['Loading...']));
-}
-
-// ── AUTH ──────────────────────────────────────────────────
-function renderAuth(){
-  var wrap=el('div',{style:{minHeight:'100vh',background:'linear-gradient(145deg,#0f172a 0%,#1e3a8a 60%,#1d4ed8 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}});
-  var inner=el('div',{style:{width:'100%',maxWidth:'420px'}});
-  inner.appendChild(el('div',{style:{textAlign:'center',marginBottom:'28px',color:'white'}},
-    [el('div',{style:{fontSize:'52px',marginBottom:'8px'}},['Azure']),
-     el('h1',{style:{fontSize:'26px',fontWeight:'900',color:'white',marginBottom:'6px'}},['Azure VM Optimizer']),
-     el('p',{style:{color:'#93c5fd',fontSize:'13px'}},['Analyze and optimize your Azure Virtual Machines'])]));
-  var c=card([],{padding:'28px'});
-  if(S.busy){
-    c.appendChild(el('div',{style:{textAlign:'center',padding:'20px 0',color:'#6b7280'}},
-      [el('div',{style:{fontSize:'32px',marginBottom:'12px'}},['...']),
-       el('div',{style:{fontWeight:'600',fontSize:'14px',color:'#374151'}},['Completing sign-in...'])]));
-  } else {
-    var eb=errBox(S.err);if(eb)c.appendChild(eb);
-    var msBtn=el('button',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',
-      width:'100%',padding:'13px 20px',background:'white',border:'1.5px solid #d1d5db',
-      borderRadius:'10px',cursor:'pointer',fontSize:'15px',fontWeight:'600',color:'#374151',
-      boxShadow:'0 1px 3px rgba(0,0,0,.1)',marginBottom:'20px',transition:'all .15s'}});
-    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('width','21');svg.setAttribute('height','21');svg.setAttribute('viewBox','0 0 21 21');
-    [['#f25022',1,1],['#7fba00',11,1],['#00a4ef',1,11],['#ffb900',11,11]].forEach(function(x){
-      var rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
-      rect.setAttribute('x',x[1]);rect.setAttribute('y',x[2]);rect.setAttribute('width','9');rect.setAttribute('height','9');rect.setAttribute('fill',x[0]);svg.appendChild(rect);
-    });
-    msBtn.appendChild(svg);msBtn.appendChild(document.createTextNode('Sign in with Microsoft'));
-    msBtn.addEventListener('click',startLogin);
-    c.appendChild(msBtn);
-    c.appendChild(el('div',{style:{textAlign:'center',fontSize:'12px',color:'#9ca3af',marginBottom:'16px'}},['Supports MFA - Redirects to Microsoft login - No credentials stored']));
-    c.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'12px 14px',fontSize:'12px',color:'#6b7280'}},
-      ['First time? You need an App Registration in Entra ID with this page URL as the SPA Redirect URI and Azure Service Management user_impersonation permission granted.']));
-  }
-  inner.appendChild(c);
-  wrap.appendChild(inner);
-  return wrap;
-}
-
-// ── BROWSE ────────────────────────────────────────────────
-function renderBrowse(){
-  function go(fn){
-    setState({busy:true,err:null});
-    fn().then(function(){setState({busy:false});}).catch(function(e){setState({busy:false,err:e.message});});
-  }
-  var wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
-  var hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
-  var soBtn=mkBtn('Sign out',function(){setState({token:null,phase:'auth',subs:[],selSub:null,rgs:[],selRG:null,vms:[]});},{variant:'secondary',sm:true});
-  soBtn.style.marginLeft='auto';
-  hdr.appendChild(el('span',{style:{fontSize:'22px'}},['VM']));
-  hdr.appendChild(el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},['Azure VM Optimizer']));
-  hdr.appendChild(el('span',{style:{background:'#dcfce7',color:'#15803d',fontSize:'11px',fontWeight:'700',padding:'2px 10px',borderRadius:'99px'}},['Signed in']));
-  if(S.busy)hdr.appendChild(el('span',{style:{color:'#6b7280',fontSize:'12px'}},['Loading...']));
-  hdr.appendChild(soBtn);
-
-  var body=el('div',{style:{maxWidth:'960px',margin:'0 auto',padding:'24px'}});
-  var eb=errBox(S.err);if(eb)body.appendChild(eb);
-
-  var grid=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'}});
-
-  var filtSubs=S.subs.filter(function(s){
-    return s.displayName.toLowerCase().indexOf(S.subQ.toLowerCase())>=0||s.subscriptionId.toLowerCase().indexOf(S.subQ.toLowerCase())>=0;
-  });
-  var subList=el('div',{style:{display:'flex',flexDirection:'column',gap:'7px',maxHeight:'320px',overflowY:'auto'}});
-  filtSubs.forEach(function(s){
-    var active=S.selSub&&S.selSub.subscriptionId===s.subscriptionId;
-    var b=el('button',{style:{textAlign:'left',padding:'10px 13px',borderRadius:'8px',border:'1.5px solid',borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px'}},
-      [el('div',{style:{fontWeight:'700',color:'#111827'}},[s.displayName]),
-       el('div',{style:{color:'#9ca3af',fontSize:'11px',fontFamily:'monospace',marginTop:'2px'}},[s.subscriptionId])]);
-    b.addEventListener('click',function(){
-      go(async function(){
-        setState({selSub:s,rgs:[],vms:[],selRG:null});
-        var r=await az(MGMT+'/subscriptions/'+s.subscriptionId+'/resourcegroups?api-version=2023-07-01');
-        setState({rgs:r.value||[]});
-      });
-    });
-    subList.appendChild(b);
-  });
-  var srch=el('input',{type:'text',value:S.subQ,placeholder:'Search subscriptions...',
-    style:{width:'100%',padding:'8px 12px',border:'1.5px solid #e5e7eb',borderRadius:'8px',fontSize:'12px',marginBottom:'10px',boxSizing:'border-box'}});
-  srch.addEventListener('input',function(e){S.subQ=e.target.value;render();});
-  grid.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Subscription']),srch,subList]));
-
-  if(S.selSub){
-    var rgList=el('div',{style:{display:'flex',flexDirection:'column',gap:'7px',maxHeight:'320px',overflowY:'auto'}});
-    S.rgs.forEach(function(rg){
-      var active=S.selRG===rg.name;
-      var b=el('button',{style:{textAlign:'left',padding:'9px 13px',borderRadius:'8px',border:'1.5px solid',borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px',fontWeight:'600',color:'#111827'}},
-        [rg.name,el('span',{style:{color:'#9ca3af',fontWeight:'400',fontSize:'11px',marginLeft:'6px'}},[rg.location])]);
-      b.addEventListener('click',function(){
-        go(async function(){
-          setState({selRG:rg.name,vms:[]});
-          var sid=S.selSub.subscriptionId;var found=[];
-          var apis=['2024-03-01','2023-09-01','2023-03-01'];
-          for(var i=0;i<apis.length;i++){
-            try{var r=await az(MGMT+'/subscriptions/'+sid+'/resourceGroups/'+encodeURIComponent(rg.name)+'/providers/Microsoft.Compute/virtualMachines?api-version='+apis[i]);found=r.value||[];if(found.length)break;}catch(e){}
-          }
-          if(!found.length){
-            var r2=await az(MGMT+'/subscriptions/'+sid+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01');
-            found=(r2.value||[]).filter(function(v){var p=v.id.split('/'),i=p.findIndex(function(x){return x.toLowerCase()==='resourcegroups';});return i>=0&&p[i+1]&&p[i+1].toLowerCase()===rg.name.toLowerCase();});
-          }
-          setState({vms:found,err:found.length?null:'No VMs found in "'+rg.name+'".'});
-        });
-      });
-      rgList.appendChild(b);
-    });
-    grid.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Resource Group']),rgList]));
-  }
-  body.appendChild(grid);
-
-  if(S.selSub){
-    var allBtn=mkBtn('Show ALL VMs in subscription',function(){
-      go(async function(){
-        setState({selRG:'All VMs',vms:[]});
-        var r=await az(MGMT+'/subscriptions/'+S.selSub.subscriptionId+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01');
-        var found=r.value||[];setState({vms:found,err:found.length?null:'No VMs found.'});
-      });
-    },{variant:'secondary',sm:true});
-    body.appendChild(el('div',{style:{marginBottom:'14px'}},[allBtn]));
-  }
-
-  if(S.vms.length>0){
-    var vmGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(270px,1fr))',gap:'12px'}});
-    S.vms.forEach(function(vm){
-      var sz=(vm.properties&&vm.properties.hardwareProfile&&vm.properties.hardwareProfile.vmSize)||'';
-      var info=VM_CATALOG[sz];
-      var vmos=(vm.properties&&vm.properties.storageProfile&&vm.properties.storageProfile.osDisk&&vm.properties.storageProfile.osDisk.osType)||'Linux';
-      var parts=vm.id.split('/'),rgi=parts.findIndex(function(p){return p.toLowerCase()==='resourcegroups';});
-      var vmRG=rgi>=0?parts[rgi+1]:'';
-      var aBtn=mkBtn(S.busy?'Analyzing...':'Analyze and Optimize',function(){
-        go(async function(){
-          setState({selVM:vm,report:null,metrics:null});
-          var detail=await az(MGMT+vm.id+'?api-version=2023-07-01&$expand=instanceView');
-          setState({vmDetail:detail});
-          var res=await fetchMetrics(vm.id,S.token);
-          var proc=processMetrics(res.all,res.memMetric,detail);
-          setState({metrics:proc,report:buildReport(proc,detail),phase:'analyze',tab:'overview'});
-        });
-      },{sm:true,disabled:S.busy});
-      vmGrid.appendChild(el('div',{style:{border:'1.5px solid #e5e7eb',borderRadius:'10px',padding:'16px',background:'white'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'14px',color:'#111827',marginBottom:'3px'}},[(vmos==='Windows'?'[Win] ':'[Linux] ')+vm.name]),
-         el('div',{style:{fontSize:'11px',color:'#9ca3af',marginBottom:'6px'}},[vm.location+(vmRG?' - '+vmRG:'')]),
-         el('div',{style:{fontSize:'12px',color:'#374151',marginBottom:'12px'}},
-           [el('strong',{},[sz]),info?el('span',{style:{color:'#6b7280'}},[' - '+info.v+' vCPU - '+info.r+' GB - ~$'+r2(info.c*730)+'/mo']):null].filter(Boolean)),
-         aBtn]));
-    });
-    body.appendChild(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'14px'}},['Virtual Machines - '+(S.selRG||'')]),vmGrid]));
-  } else if(S.selSub&&!S.busy&&!S.err){
-    body.appendChild(card([el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['Select a resource group or click Show ALL VMs.'])]));
-  }
-
-  wrap.appendChild(hdr);wrap.appendChild(body);
-  return wrap;
-}
-
-// ── ANALYZE ───────────────────────────────────────────────
-function renderAnalyze(){
-  var m=S.metrics,rep=S.report,vd=S.vmDetail;
-  var tags=vd&&vd.tags||{};
-  var os=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk&&vd.properties.storageProfile.osDisk.osType)||'Linux';
-  var statuses=vd&&vd.properties&&vd.properties.instanceView&&vd.properties.instanceView.statuses||[];
-  var pwStatus=statuses.find(function(s){return s.code&&s.code.indexOf('PowerState/')===0;});
-  var pw=(pwStatus&&pwStatus.displayStatus)||'Unknown';
-  var osDiskObj=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk;
-  var dataDisks=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.dataDisks)||[];
-  var disks=[osDiskObj].concat(dataDisks).filter(Boolean);
-  var TABS=['overview','cpu','disk','network','recommendations','details'];
-
-  var wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
-  var hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
-  var pwBadge=el('span',{style:{marginLeft:'auto',background:pw.indexOf('running')>=0?'#dcfce7':'#fef3c7',color:pw.indexOf('running')>=0?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'}},[pw]);
-  hdr.appendChild(mkBtn('Back',function(){setState({phase:'browse'});},{variant:'secondary',sm:true}));
-  hdr.appendChild(el('span',{style:{fontSize:'20px'}},['VM']));
-  hdr.appendChild(el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},[(os==='Windows'?'[Win] ':'[Linux] ')+(S.selVM&&S.selVM.name||'')]));
-  hdr.appendChild(el('span',{style:{color:'#6b7280',fontSize:'12px'}},[m.vmSize+' - '+(S.selVM&&S.selVM.location||'')]));
-  hdr.appendChild(pwBadge);
-
-  var body=el('div',{style:{maxWidth:'1120px',margin:'0 auto',padding:'24px'}});
-
-  var banner=el('div',{style:{display:'grid',gridTemplateColumns:'180px 1fr',gap:'16px',marginBottom:'20px'}});
-  var sc=card([
-    el('div',{style:{fontSize:'11px',fontWeight:'700',color:'#6b7280',marginBottom:'8px'}},['OPTIMIZATION SCORE']),
-    el('div',{style:{fontSize:'68px',fontWeight:'900',color:scC(rep.score),lineHeight:'1'}},[String(rep.score)]),
-    el('div',{style:{fontSize:'12px',color:scC(rep.score),marginTop:'6px',fontWeight:'700'}},[rep.score>=80?'Well Optimized':rep.score>=60?'Needs Attention':'Needs Work']),
-    el('div',{style:{marginTop:'10px',fontSize:'12px',color:'#374151'}},['~$'+rep.monthlyCost+'/month'])
-  ],{textAlign:'center',background:scBg(rep.score)});
-  var chips=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'7px',marginBottom:'8px'}});
-  rep.recs.forEach(function(r){var s=SEV[r.sev];chips.appendChild(el('span',{style:{background:s.bg,color:s.tx,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'99px',border:'1px solid '+s.bd}},[r.title]));});
-  var sc2=card([el('div',{style:{fontSize:'13px',fontWeight:'700',color:'#111827',marginBottom:'10px'}},[rep.recs.length+' Recommendations - 7-day analysis']),chips]);
-  if(rep.rs&&rep.rs.size!==m.vmSize)sc2.appendChild(el('div',{style:{marginTop:'8px',padding:'9px 12px',background:'#f0fdf4',borderRadius:'8px',fontSize:'12px',color:'#15803d',fontWeight:'600'}},['Right-size to '+rep.rs.size+' - '+rep.rs.reason]));
-  banner.appendChild(sc);banner.appendChild(sc2);
-  body.appendChild(banner);
-
-  var tabBar=el('div',{style:{display:'flex',gap:'3px',marginBottom:'20px',background:'white',borderRadius:'10px',padding:'5px',border:'1px solid #e5e7eb',width:'fit-content'}});
-  TABS.forEach(function(t){
-    var b=el('button',{className:'tab-btn'+(S.tab===t?' active':'')},[t.charAt(0).toUpperCase()+t.slice(1)]);
-    b.addEventListener('click',function(){setState({tab:t});});
-    tabBar.appendChild(b);
-  });
-  body.appendChild(tabBar);
-
-  var content=el('div');
-
-  if(S.tab==='overview'){
-    var g1=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
-    g1.appendChild(statCard('Avg CPU',m.cpuAvg,'%','Max '+m.cpuMax+'% p95 '+m.cpuP95+'%',m.cpuAvg>80?'#dc2626':m.cpuAvg<10?'#d97706':'#2563eb',m.cpuAvg>85||m.cpuAvg<5));
-    g1.appendChild(statCard('Memory',m.memPct!=null?m.memPct:'N/A',m.memPct?'%':'',m.memPct?'Avg 7 days':'Linux/unavailable',!m.memPct?'#9ca3af':m.memPct>85?'#dc2626':'#2563eb',m.memPct>85));
-    g1.appendChild(statCard('Disk Read',m.avgDiskR,'MB/s',m.avgROps+' avg IOPS','#7c3aed'));
-    g1.appendChild(statCard('Disk Write',m.avgDiskW,'MB/s',m.avgWOps+' avg IOPS','#7c3aed'));
-    var g2=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
-    g2.appendChild(statCard('Data Disk R',m.avgDdR,'MB/s',m.avgDdROps+' IOPS','#0891b2'));
-    g2.appendChild(statCard('Data Disk W',m.avgDdW,'MB/s',m.avgDdWOps+' IOPS','#0891b2'));
-    g2.appendChild(statCard('Net In 7d',m.totIn,'GB','','#059669'));
-    g2.appendChild(statCard('Net Out 7d',m.totOut,'GB','','#059669'));
-    content.appendChild(g1);content.appendChild(g2);
-    content.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',color:'#374151',marginBottom:'14px'}},['CPU Utilization - Daily Trend (7 days)']),cpuTable(m.chartData)]));
-  }
-  if(S.tab==='cpu'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['CPU Statistics']),barTable([{name:'Average',v:m.cpuAvg+'%'},{name:'Maximum',v:m.cpuMax+'%'},{name:'p95',v:m.cpuP95+'%'},{name:'Minimum',v:m.cpuMin+'%'}])]));
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['Daily Trend']),cpuTable(m.chartData)]));
-    content.appendChild(g);
-  }
-  if(S.tab==='disk'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['OS Disk']),barTable([{name:'Read MB/s',v:m.avgDiskR},{name:'Write MB/s',v:m.avgDiskW},{name:'Read IOPS avg',v:m.avgROps},{name:'Write IOPS avg',v:m.avgWOps},{name:'Read IOPS peak',v:m.maxROps},{name:'Write IOPS peak',v:m.maxWOps}])]));
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['Data Disk']),barTable([{name:'Read MB/s',v:m.avgDdR},{name:'Write MB/s',v:m.avgDdW},{name:'Read IOPS',v:m.avgDdROps},{name:'Write IOPS',v:m.avgDdWOps}])]));
-    var diskCard=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Attached Disks'])]);
-    var dg=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:'8px'}});
-    disks.forEach(function(d,i){
-      var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      dg.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
-         el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},[(d.diskSizeGB?d.diskSizeGB+' GB - ':'')+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])]));
-    });
-    diskCard.appendChild(dg);
-    diskCard.style.gridColumn='1/-1';
-    g.appendChild(diskCard);
-    content.appendChild(g);
-  }
-  if(S.tab==='network'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    g.appendChild(card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['7-Day Network Totals']),barTable([{name:'Inbound GB',v:m.totIn},{name:'Outbound GB',v:m.totOut}])]));
-    var nc=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Network Summary'])]);
-    [['Total Inbound',m.totIn+' GB'],['Total Outbound',m.totOut+' GB'],['Ratio In:Out',m.totOut>0?'1:'+r2(m.totOut/Math.max(m.totIn,0.01)):'N/A'],['Est. egress','~$'+r2(m.totOut*0.087)]].forEach(function(x){nc.appendChild(rowEl(x[0],x[1]));});
-    nc.appendChild(el('div',{style:{marginTop:'10px',fontSize:'11px',color:'#9ca3af'}},['Egress at $0.087/GB West Europe estimate']));
-    g.appendChild(nc);
-    content.appendChild(g);
-  }
-  if(S.tab==='recommendations'){
-    var list=el('div',{style:{display:'flex',flexDirection:'column',gap:'13px'}});
-    rep.recs.forEach(function(r){
-      var s=SEV[r.sev];
-      var inner=el('div',{style:{flex:'1'}},
-        [el('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'5px'}},
-          [el('span',{style:{fontWeight:'800',fontSize:'14px',color:'#111827'}},[r.title]),
-           el('span',{style:{background:'#f3f4f6',color:'#374151',fontSize:'11px',fontWeight:'600',padding:'2px 7px',borderRadius:'99px'}},[r.cat])]),
-         el('p',{style:{margin:'0 0 7px',fontSize:'13px',color:'#4b5563',lineHeight:'1.5'}},[r.detail]),
-         el('div',{style:{fontSize:'13px',color:'#374151'}},[el('strong',{},'Action: '),r.action]),
-         r.savings?el('div',{style:{marginTop:'5px',fontSize:'13px',color:'#059669',fontWeight:'700'}},['Savings: '+r.savings]):null
-        ].filter(Boolean));
-      list.appendChild(el('div',{style:{background:s.bg,borderRadius:'12px',border:'1px solid '+s.bd,padding:'18px',borderLeft:'5px solid '+s.tx}},
-        [el('div',{style:{display:'flex',gap:'13px',alignItems:'flex-start'}},
-          [el('span',{style:{background:s.tx,color:'white',fontSize:'10px',fontWeight:'800',padding:'3px 8px',borderRadius:'99px',whiteSpace:'nowrap',marginTop:'2px',flexShrink:'0'}},[s.lbl]),inner])]));
-    });
-    content.appendChild(list);
-  }
-  if(S.tab==='details'){
-    var g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}});
-    var vmConf=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['VM Configuration'])]);
-    var imgRef=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.imageReference;
-    var osDiskSku=osDiskObj&&osDiskObj.managedDisk&&osDiskObj.managedDisk.storageAccountType;
-    [['Name',vd&&vd.name],['Resource Group',S.selRG],['Location',vd&&vd.location],
-     ['VM Size',m.vmSize],['vCPU / RAM',m.si.v+' vCPU / '+m.si.r+' GB'],['OS',os],
-     ['OS Disk SKU',osDiskSku||'--'],['Image',(imgRef&&imgRef.offer)||'Custom'],
-     ['Power State',pw],['Provisioning',vd&&vd.properties&&vd.properties.provisioningState],
-     ['Est. Cost','~$'+rep.monthlyCost+'/mo']
-    ].forEach(function(x){vmConf.appendChild(rowEl(x[0],String(x[1]||'--')));});
-    g.appendChild(vmConf);
-    var right=el('div',{style:{display:'flex',flexDirection:'column',gap:'16px'}});
-    var tagCard=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Tags'])]);
-    if(Object.keys(tags).length===0){tagCard.appendChild(el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['No tags found.']));}
-    else{Object.keys(tags).forEach(function(k){tagCard.appendChild(rowEl(k,tags[k]));});}
-    var diskCard2=card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['Attached Disks'])]);
-    disks.forEach(function(d,i){
-      var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      diskCard2.appendChild(el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
-        [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
-         el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},[(d.diskSizeGB?d.diskSizeGB+' GB':'?')+' - '+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])]));
-    });
-    right.appendChild(tagCard);right.appendChild(diskCard2);
-    g.appendChild(right);
-    content.appendChild(g);
-  }
-
-  body.appendChild(content);
-  wrap.appendChild(hdr);wrap.appendChild(body);
-  return wrap;
-}
-
-// ── Boot ──────────────────────────────────────────────────
-handleCallback().then(function(){render();});
+// ── Boot ──────────────────────────────────────────────────────
+handleCB();draw();
 </script>
 </body>
 </html>
