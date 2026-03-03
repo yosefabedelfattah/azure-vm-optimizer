@@ -481,15 +481,12 @@ function drawAuth(){
 
     // Bearer Token section
     c.appendChild(h('p',{style:{fontSize:'12px',fontWeight:'700',color:'#374151',marginBottom:'6px'}},['📋 Paste Bearer Token']));
-    c.appendChild(div({background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px',fontSize:'11px',color:'#0369a1',lineHeight:'1.6'}},[
-      h('strong',{},'Run in PowerShell:'),h('br'),
-      h('code',{style:{display:'block',marginTop:'4px',background:'#e0f2fe',padding:'4px 8px',borderRadius:'4px',wordBreak:'break-all',fontFamily:'monospace',fontSize:'10px'}},
-        ['az login']),
-      h('code',{style:{display:'block',marginTop:'4px',background:'#e0f2fe',padding:'4px 8px',borderRadius:'4px',wordBreak:'break-all',fontFamily:'monospace',fontSize:'10px'}},
-        ['az account set --subscription 596d8c38-b6e5-4528-835f-3d47e4862d08']),
-      h('code',{style:{display:'block',marginTop:'4px',background:'#e0f2fe',padding:'4px 8px',borderRadius:'4px',wordBreak:'break-all',fontFamily:'monospace',fontSize:'10px'}},
-        ['az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv'])
-    ]));
+    var infoBox = div({background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px',fontSize:'11px',color:'#0369a1',lineHeight:'1.6'});
+    infoBox.innerHTML = '<strong>Run in PowerShell:</strong><br/>' +
+      '<code style="display:block;margin-top:4px;background:#e0f2fe;padding:4px 8px;border-radius:4px;word-break:break-all;font-family:monospace;font-size:10px">az login</code>' +
+      '<code style="display:block;margin-top:4px;background:#e0f2fe;padding:4px 8px;border-radius:4px;word-break:break-all;font-family:monospace;font-size:10px">az account set --subscription 596d8c38-b6e5-4528-835f-3d47e4862d08</code>' +
+      '<code style="display:block;margin-top:4px;background:#e0f2fe;padding:4px 8px;border-radius:4px;word-break:break-all;font-family:monospace;font-size:10px">az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv</code>';
+    c.appendChild(infoBox);
     var ta=h('textarea',{rows:'3',placeholder:'Paste token here: eyJ0eXAiOiJKV1Qi...',
       style:{width:'100%',boxSizing:'border-box',padding:'9px 12px',border:'1.5px solid #d1d5db',
         borderRadius:'8px',fontSize:'12px',fontFamily:'monospace',resize:'vertical',marginBottom:'8px'}});
