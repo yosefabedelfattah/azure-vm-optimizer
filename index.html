@@ -4,817 +4,950 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Azure VM Optimizer</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☁</text></svg>"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;color:#111827}
-input,textarea,button{font-family:inherit;outline:none}
-::-webkit-scrollbar{width:6px}
+input,textarea{outline:none;font-family:inherit}
+button{font-family:inherit;cursor:pointer}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#f1f5f9}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .pulse{animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.tabbtn{padding:7px 15px;border-radius:7px;border:none;cursor:pointer;font-weight:600;font-size:12px;background:transparent;color:#6b7280}
-.tabbtn.on{background:#2563eb;color:white}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.tab-btn{padding:7px 16px;border-radius:7px;border:none;cursor:pointer;font-weight:600;font-size:12px;transition:all .15s}
+.tab-btn.active{background:#2563eb;color:white}
+.tab-btn:not(.active){background:transparent;color:#6b7280}
+.method-card{text-align:left;padding:14px 16px;border-radius:10px;border:1.5px solid #e5e7eb;background:white;cursor:pointer;transition:all .15s;width:100%;display:block;margin-bottom:10px}
+.method-card:hover{border-color:#2563eb;background:#eff6ff}
+a{color:#2563eb}
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="app"></div>
 <script>
-// =============================================================
-// CONFIG -- replace with your values
-// =============================================================
-var TENANT = 'YOUR_TENANT_ID';
-var CLIENT = 'YOUR_CLIENT_ID';
-// =============================================================
+// ═══════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════
+const MGMT     = 'https://management.azure.com';
+const TENANT_U = tid => `https://login.microsoftonline.com/${tid}`;
+const SCOPE    = 'https://management.azure.com/.default offline_access';
 
-var MGMT = 'https://management.azure.com';
-
-var CAT = {
-  'Standard_B1s':{v:1,r:1,c:0.011},'Standard_B2ms':{v:2,r:8,c:0.083},
-  'Standard_B4ms':{v:4,r:16,c:0.166},'Standard_B8ms':{v:8,r:32,c:0.333},
-  'Standard_D2s_v3':{v:2,r:8,c:0.096},'Standard_D4s_v3':{v:4,r:16,c:0.192},
-  'Standard_D8s_v3':{v:8,r:32,c:0.384},'Standard_D2s_v5':{v:2,r:8,c:0.096},
-  'Standard_D4s_v5':{v:4,r:16,c:0.192},'Standard_D8s_v5':{v:8,r:32,c:0.384},
-  'Standard_D16s_v5':{v:16,r:64,c:0.768},
-  'Standard_D2ads_v5':{v:2,r:8,c:0.096},'Standard_D4ads_v5':{v:4,r:16,c:0.192},
-  'Standard_D8ads_v5':{v:8,r:32,c:0.384},'Standard_D16ads_v5':{v:16,r:64,c:0.768},
-  'Standard_D32ads_v5':{v:32,r:128,c:1.536},
-  'Standard_E2s_v3':{v:2,r:16,c:0.126},'Standard_E4s_v3':{v:4,r:32,c:0.252},
-  'Standard_E8s_v3':{v:8,r:64,c:0.504},'Standard_E16s_v3':{v:16,r:128,c:1.008},
-  'Standard_E2ads_v5':{v:2,r:16,c:0.126},'Standard_E4ads_v5':{v:4,r:32,c:0.252},
-  'Standard_E8ads_v5':{v:8,r:64,c:0.504},'Standard_E16ads_v5':{v:16,r:128,c:1.008},
-  'Standard_F2s_v2':{v:2,r:4,c:0.085},'Standard_F4s_v2':{v:4,r:8,c:0.170},
-  'Standard_F8s_v2':{v:8,r:16,c:0.338},'Standard_F16s_v2':{v:16,r:32,c:0.676}
+const VM_CATALOG = {
+  'Standard_B1s':     {vcpu:1,  ram:1,   tier:'burstable', cost:0.011},
+  'Standard_B1ms':    {vcpu:1,  ram:2,   tier:'burstable', cost:0.021},
+  'Standard_B2s':     {vcpu:2,  ram:4,   tier:'burstable', cost:0.042},
+  'Standard_B2ms':    {vcpu:2,  ram:8,   tier:'burstable', cost:0.083},
+  'Standard_B4ms':    {vcpu:4,  ram:16,  tier:'burstable', cost:0.166},
+  'Standard_B8ms':    {vcpu:8,  ram:32,  tier:'burstable', cost:0.333},
+  'Standard_D2s_v3':  {vcpu:2,  ram:8,   tier:'general',   cost:0.096},
+  'Standard_D4s_v3':  {vcpu:4,  ram:16,  tier:'general',   cost:0.192},
+  'Standard_D8s_v3':  {vcpu:8,  ram:32,  tier:'general',   cost:0.384},
+  'Standard_D2s_v5':  {vcpu:2,  ram:8,   tier:'general',   cost:0.096},
+  'Standard_D4s_v5':  {vcpu:4,  ram:16,  tier:'general',   cost:0.192},
+  'Standard_D8s_v5':  {vcpu:8,  ram:32,  tier:'general',   cost:0.384},
+  'Standard_D16s_v5': {vcpu:16, ram:64,  tier:'general',   cost:0.768},
+  'Standard_D2ds_v5': {vcpu:2,  ram:8,   tier:'general',   cost:0.096},
+  'Standard_D4ds_v5': {vcpu:4,  ram:16,  tier:'general',   cost:0.192},
+  'Standard_D8ds_v5': {vcpu:8,  ram:32,  tier:'general',   cost:0.384},
+  'Standard_D2ads_v5':{vcpu:2,  ram:8,   tier:'general',   cost:0.096},
+  'Standard_D4ads_v5':{vcpu:4,  ram:16,  tier:'general',   cost:0.192},
+  'Standard_D8ads_v5':{vcpu:8,  ram:32,  tier:'general',   cost:0.384},
+  'Standard_D16ads_v5':{vcpu:16,ram:64,  tier:'general',   cost:0.768},
+  'Standard_D32ads_v5':{vcpu:32,ram:128, tier:'general',   cost:1.536},
+  'Standard_E2s_v3':  {vcpu:2,  ram:16,  tier:'memory',    cost:0.126},
+  'Standard_E4s_v3':  {vcpu:4,  ram:32,  tier:'memory',    cost:0.252},
+  'Standard_E8s_v3':  {vcpu:8,  ram:64,  tier:'memory',    cost:0.504},
+  'Standard_E16s_v3': {vcpu:16, ram:128, tier:'memory',    cost:1.008},
+  'Standard_E2ads_v5':{vcpu:2,  ram:16,  tier:'memory',    cost:0.126},
+  'Standard_E4ads_v5':{vcpu:4,  ram:32,  tier:'memory',    cost:0.252},
+  'Standard_E8ads_v5':{vcpu:8,  ram:64,  tier:'memory',    cost:0.504},
+  'Standard_E16ads_v5':{vcpu:16,ram:128, tier:'memory',    cost:1.008},
+  'Standard_F2s_v2':  {vcpu:2,  ram:4,   tier:'compute',   cost:0.085},
+  'Standard_F4s_v2':  {vcpu:4,  ram:8,   tier:'compute',   cost:0.170},
+  'Standard_F8s_v2':  {vcpu:8,  ram:16,  tier:'compute',   cost:0.338},
+  'Standard_F16s_v2': {vcpu:16, ram:32,  tier:'compute',   cost:0.676},
 };
 
-var SEV = {
-  critical:{bg:'#fef2f2',bd:'#fca5a5',tx:'#dc2626',lb:'CRITICAL'},
-  high:    {bg:'#fff7ed',bd:'#fdba74',tx:'#ea580c',lb:'HIGH'},
-  medium:  {bg:'#fffbeb',bd:'#fcd34d',tx:'#d97706',lb:'MEDIUM'},
-  low:     {bg:'#eff6ff',bd:'#93c5fd',tx:'#2563eb',lb:'LOW'},
-  info:    {bg:'#f5f3ff',bd:'#c4b5fd',tx:'#7c3aed',lb:'INFO'}
+const SEV = {
+  critical:{bg:'#fef2f2',border:'#fca5a5',text:'#dc2626',label:'CRITICAL'},
+  high:    {bg:'#fff7ed',border:'#fdba74',text:'#ea580c',label:'HIGH'},
+  medium:  {bg:'#fffbeb',border:'#fcd34d',text:'#d97706',label:'MEDIUM'},
+  low:     {bg:'#eff6ff',border:'#93c5fd',text:'#2563eb',label:'LOW'},
+  info:    {bg:'#f5f3ff',border:'#c4b5fd',text:'#7c3aed',label:'INFO'},
 };
 
-// helpers
-function avg(a){return a.length?a.reduce(function(x,y){return x+y;},0)/a.length:0;}
-function sumArr(a){return a.reduce(function(x,y){return x+y;},0);}
-function r2(v){return Math.round(v*100)/100;}
-function r1(v){return Math.round(v*10)/10;}
-function pctile(a,p){if(!a.length)return 0;var s=a.slice().sort(function(x,y){return x-y;});return s[Math.floor(p/100*s.length)]||0;}
-function scC(s){return s>=80?'#16a34a':s>=60?'#d97706':'#dc2626';}
-function scBg(s){return s>=80?'#f0fdf4':s>=60?'#fffbeb':'#fef2f2';}
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+const avg  = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+const sum  = a => a.reduce((x,y)=>x+y,0);
+const r2   = v => Math.round(v*100)/100;
+const r1   = v => Math.round(v*10)/10;
+const perc = (a,p) => { if(!a.length)return 0; const s=[...a].sort((x,y)=>x-y); return s[Math.floor(p/100*s.length)]||0; };
+const $    = id => document.getElementById(id);
+const scoreColor = s => s>=80?'#16a34a':s>=60?'#d97706':'#dc2626';
+const scoreBg    = s => s>=80?'#f0fdf4':s>=60?'#fffbeb':'#fef2f2';
 
-// state
-var S = {
-  phase:'auth', token:null,
+// ─── DOM factory ─────────────────────────────────────────────
+const el = (tag, props={}, children=[]) => {
+  const e = document.createElement(tag);
+  Object.entries(props).forEach(([k,v]) => {
+    if      (k==='style'&&typeof v==='object') Object.assign(e.style, v);
+    else if (k==='className') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), v);
+    else e.setAttribute(k, v);
+  });
+  const kids = Array.isArray(children) ? children : [children];
+  kids.forEach(c => { if(c!=null) e.appendChild(typeof c==='string'?document.createTextNode(c):c); });
+  return e;
+};
+
+const card = (children=[], style={}) =>
+  el('div',{style:{background:'white',borderRadius:'12px',border:'1px solid #e5e7eb',
+    boxShadow:'0 1px 3px rgba(0,0,0,.06)',padding:'20px',...style}}, children);
+
+const mkBtn = (label, onClick, opts={}) => {
+  const {variant='primary',disabled=false,sm=false,full=false} = opts;
+  const themes = {
+    primary:  {background:'#2563eb',color:'white',border:'none'},
+    secondary:{background:'white',color:'#374151',border:'1px solid #d1d5db'},
+    ghost:    {background:'transparent',color:'#6b7280',border:'none'},
+  };
+  const b = el('button',{style:{...themes[variant],borderRadius:'8px',
+    cursor:disabled?'not-allowed':'pointer',fontWeight:'600',
+    fontSize:sm?'12px':'14px',padding:sm?'7px 14px':'11px 22px',
+    opacity:disabled?.55:1,transition:'all .15s',width:full?'100%':'auto'}}, [label]);
+  if (!disabled && onClick) b.addEventListener('click', onClick);
+  return b;
+};
+
+const errBox = msg => msg
+  ? el('div',{style:{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'8px',
+      padding:'10px 14px',marginBottom:'14px',fontSize:'13px',color:'#dc2626'}}, ['⚠️ '+msg])
+  : null;
+
+const infoBox = txt =>
+  el('div',{style:{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',
+    padding:'10px 13px',marginBottom:'16px',fontSize:'12px',color:'#0369a1'}}, [txt]);
+
+const statCard = (label, value, unit='', sub='', color='#1d4ed8', warn=false) =>
+  el('div',{style:{background:'white',borderRadius:'12px',
+    border:`1.5px solid ${warn?'#fca5a5':'#e5e7eb'}`,padding:'16px 18px',textAlign:'center'}},
+  [ el('div',{style:{fontSize:'11px',color:'#6b7280',fontWeight:'700',textTransform:'uppercase',
+      letterSpacing:'0.06em',marginBottom:'6px'}},[label]),
+    el('div',{style:{fontSize:'26px',fontWeight:'900',color,lineHeight:'1'}},
+      [String(value), el('span',{style:{fontSize:'13px',fontWeight:'500',color:'#6b7280'}},unit?[unit]:[])]),
+    sub ? el('div',{style:{fontSize:'11px',color:'#9ca3af',marginTop:'4px'}},[sub]) : null
+  ].filter(Boolean));
+
+const rowEl = (k,v) =>
+  el('div',{style:{display:'flex',justifyContent:'space-between',padding:'8px 0',
+    borderBottom:'1px solid #f3f4f6',fontSize:'13px'}},
+  [el('span',{style:{color:'#6b7280'}},[k]),
+   el('span',{style:{fontWeight:'600',color:'#111827',maxWidth:'250px',textAlign:'right',wordBreak:'break-all'}},[String(v||'—')])]);
+
+// ─── Chart helpers (no external libs) ────────────────────────
+const cpuTable = data => {
+  const t = el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
+  t.append(el('thead',{},[el('tr',{},[
+    el('th',{style:{textAlign:'left', padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Date']),
+    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Avg %']),
+    el('th',{style:{textAlign:'right',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},['Max %']),
+    el('th',{style:{padding:'6px 8px',borderBottom:'2px solid #e5e7eb'}},['Trend']),
+  ])]));
+  const tb = el('tbody');
+  if (!data.length) tb.append(el('tr',{},[el('td',{colspan:'4',style:{padding:'12px 8px',color:'#9ca3af',textAlign:'center'}},['No CPU data available'])]));
+  data.forEach(d => {
+    const color = d.avgCPU>80?'#dc2626':d.avgCPU>50?'#f59e0b':'#2563eb';
+    const bar = el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'100px'}},
+      [el('div',{style:{height:'8px',borderRadius:'4px',background:color,width:Math.round(d.avgCPU)+'%',minWidth:'2px'}})]);
+    tb.append(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
+      [el('td',{style:{padding:'7px 8px',fontWeight:'600',color:'#374151'}},[d.date]),
+       el('td',{style:{padding:'7px 8px',textAlign:'right',color,fontWeight:'700'}},[d.avgCPU+'%']),
+       el('td',{style:{padding:'7px 8px',textAlign:'right',color:'#9ca3af'}},[d.maxCPU+'%']),
+       el('td',{style:{padding:'7px 8px'}},[bar])]));
+  });
+  t.append(tb);
+  return t;
+};
+
+const barTable = rows => {
+  const maxV = Math.max(...rows.map(r=>parseFloat(r.v)||0), 1);
+  const t = el('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
+  const tb = el('tbody');
+  rows.forEach(r => {
+    const v = parseFloat(r.v)||0;
+    const bar = el('div',{style:{background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'80px'}},
+      [el('div',{style:{height:'8px',borderRadius:'4px',background:'#2563eb',width:Math.round(v/maxV*100)+'%',minWidth:'2px'}})]);
+    tb.append(el('tr',{style:{borderBottom:'1px solid #f3f4f6'}},
+      [el('td',{style:{padding:'7px 8px',color:'#6b7280'}},[r.name]),
+       el('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:'700',color:'#111827'}},[String(r.v)]),
+       el('td',{style:{padding:'7px 8px',minWidth:'100px'}},[bar])]));
+  });
+  t.append(tb);
+  return t;
+};
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let S = {
+  phase:'connect', authMethod:null,
+  token:null, tenantId:'', clientId:'', pastedToken:'',
+  deviceCode:null, pollTimer:null,
   subs:[], selSub:null, rgs:[], selRG:null, vms:[], selVM:null,
   vmDetail:null, metrics:null, report:null,
-  tab:'overview', busy:false, err:null, subQ:''
+  tab:'overview', busy:false, err:null,
 };
-function set(p){Object.assign(S,p);draw();}
+const setState = patch => { Object.assign(S, patch); render(); };
 
-// azure fetch
-function azGet(url) {
-  return fetch(url,{headers:{Authorization:'Bearer '+S.token}}).then(function(r){
-    if(!r.ok){return r.text().then(function(t){throw new Error('Azure '+r.status+': '+t.slice(0,200));});}
-    return r.json();
-  });
-}
+// ═══════════════════════════════════════════════════════════
+// AZURE API
+// ═══════════════════════════════════════════════════════════
+const az = async (url, tok) => {
+  const r = await fetch(url, {headers:{Authorization:`Bearer ${tok||S.token}`}});
+  if (!r.ok) { const t=await r.text(); throw new Error(`Azure ${r.status}: ${t.slice(0,400)}`); }
+  return r.json();
+};
 
-// PKCE
-function genV(){var a=new Uint8Array(32);crypto.getRandomValues(a);return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
-function genC(v){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)).then(function(h){return btoa(String.fromCharCode.apply(null,new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');});}
+const loadSubs = async tok => {
+  const s = await az(`${MGMT}/subscriptions?api-version=2022-12-01`, tok);
+  setState({subs:s.value||[], phase:'browse', busy:false, err:null});
+};
 
-function startLogin(){
-  var v=genV();
-  genC(v).then(function(ch){
-    var red=location.href.split('?')[0].split('#')[0];
-    sessionStorage.setItem('pv',v);
-    sessionStorage.setItem('pr',red);
-    var p=new URLSearchParams({
-      client_id:CLIENT,response_type:'code',redirect_uri:red,
-      scope:'https://management.azure.com/user_impersonation offline_access',
-      code_challenge:ch,code_challenge_method:'S256',response_mode:'query'
+// ═══════════════════════════════════════════════════════════
+// AUTH — BEARER TOKEN
+// ═══════════════════════════════════════════════════════════
+const connectWithToken = async () => {
+  const tok = S.pastedToken.trim();
+  if (!tok) { setState({err:'Please paste a bearer token.'}); return; }
+  setState({busy:true, err:null});
+  try { S.token=tok; await loadSubs(tok); }
+  catch(e) { setState({busy:false, err:e.message}); }
+};
+
+// ═══════════════════════════════════════════════════════════
+// AUTH — DEVICE CODE
+// ═══════════════════════════════════════════════════════════
+const startDeviceFlow = async () => {
+  if (!S.tenantId||!S.clientId) { setState({err:'Tenant ID and Client ID are required.'}); return; }
+  setState({busy:true, err:null});
+  try {
+    const r = await fetch(`${TENANT_U(S.tenantId)}/oauth2/v2.0/devicecode`,{
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({client_id:S.clientId, scope:SCOPE})
     });
-    location.href='https://login.microsoftonline.com/'+TENANT+'/oauth2/v2.0/authorize?'+p;
-  });
-}
+    const data = await r.json();
+    if (data.error) throw new Error(data.error_description||data.error);
+    const timer = setInterval(()=>pollDevice(data.device_code, timer), (data.interval||5)*1000);
+    setState({deviceCode:data, pollTimer:timer, busy:false});
+  } catch(e) { setState({busy:false, err:e.message}); }
+};
 
-function handleCB(){
-  var p=new URLSearchParams(location.search);
-  var code=p.get('code');
-  if(p.get('error')){set({err:p.get('error_description')||p.get('error'),phase:'auth'});return;}
-  if(!code)return;
-  var v=sessionStorage.getItem('pv');
-  var red=sessionStorage.getItem('pr');
-  sessionStorage.removeItem('pv');sessionStorage.removeItem('pr');
+const pollDevice = async (dc, timer) => {
+  try {
+    const r = await fetch(`${TENANT_U(S.tenantId)}/oauth2/v2.0/token`,{
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({client_id:S.clientId, device_code:dc,
+        grant_type:'urn:ietf:params:oauth:grant-type:device_code'})
+    });
+    const data = await r.json();
+    if (data.access_token) {
+      clearInterval(timer);
+      S.token = data.access_token;
+      setState({pollTimer:null, deviceCode:null, busy:true});
+      await loadSubs(data.access_token);
+    } else if (data.error && data.error!=='authorization_pending' && data.error!=='slow_down') {
+      clearInterval(timer);
+      setState({pollTimer:null, deviceCode:null, err:data.error_description||data.error});
+    }
+  } catch(_) {}
+};
+
+const cancelDevice = () => {
+  if (S.pollTimer) clearInterval(S.pollTimer);
+  setState({pollTimer:null, deviceCode:null, err:null});
+};
+
+// ═══════════════════════════════════════════════════════════
+// AUTH — PKCE
+// ═══════════════════════════════════════════════════════════
+const genVerifier  = () => { const a=new Uint8Array(32); crypto.getRandomValues(a); return btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,''); };
+const genChallenge = async v => { const e=new TextEncoder().encode(v); const h=await crypto.subtle.digest('SHA-256',e); return btoa(String.fromCharCode(...new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,''); };
+
+const startPKCE = async () => {
+  if (!S.tenantId||!S.clientId) { setState({err:'Tenant ID and Client ID are required.'}); return; }
+  const verifier=genVerifier(), challenge=await genChallenge(verifier);
+  sessionStorage.setItem('pkce_v',verifier);
+  sessionStorage.setItem('pkce_t',S.tenantId);
+  sessionStorage.setItem('pkce_c',S.clientId);
+  const redirect = location.href.split('?')[0].split('#')[0];
+  const params = new URLSearchParams({client_id:S.clientId,response_type:'code',redirect_uri:redirect,
+    scope:SCOPE,code_challenge:challenge,code_challenge_method:'S256',response_mode:'query'});
+  location.href = `${TENANT_U(S.tenantId)}/oauth2/v2.0/authorize?${params}`;
+};
+
+const handlePKCECallback = async () => {
+  const p=new URLSearchParams(location.search), code=p.get('code');
+  if (!code) return;
+  const verifier=sessionStorage.getItem('pkce_v'), tid=sessionStorage.getItem('pkce_t'), cid=sessionStorage.getItem('pkce_c');
+  if (!verifier||!tid||!cid) return;
+  ['pkce_v','pkce_t','pkce_c'].forEach(k=>sessionStorage.removeItem(k));
   history.replaceState({},'',location.pathname);
-  set({busy:true,phase:'auth'});
-  fetch('https://login.microsoftonline.com/'+TENANT+'/oauth2/v2.0/token',{
-    method:'POST',
-    headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:new URLSearchParams({client_id:CLIENT,code:code,redirect_uri:red,grant_type:'authorization_code',code_verifier:v})
-  }).then(function(r){return r.json();}).then(function(d){
-    if(!d.access_token){throw new Error(d.error_description||d.error||'Token exchange failed');}
-    S.token=d.access_token;
-    return azGet(MGMT+'/subscriptions?api-version=2022-12-01');
-  }).then(function(s){
-    set({subs:s.value||[],phase:'browse',busy:false,err:null});
-  }).catch(function(e){set({err:e.message,phase:'auth',busy:false});});
-}
-
-// metrics
-function fetchMetrics(vmId){
-  var end=new Date().toISOString();
-  var start=new Date(Date.now()-7*24*3600*1000).toISOString();
-  var ts=start+'/'+end;
-  var batches=[
-    ['Percentage CPU'],
-    ['Network In Total','Network Out Total'],
-    ['Network In','Network Out'],
-    ['Disk Read Bytes/sec','Disk Write Bytes/sec'],
-    ['Disk Read Bytes','Disk Write Bytes'],
-    ['Disk Read Operations/Sec','Disk Write Operations/Sec'],
-    ['OS Disk Read Bytes/sec','OS Disk Write Bytes/sec'],
-    ['OS Disk Read Operations/Sec','OS Disk Write Operations/Sec'],
-    ['Data Disk Read Bytes/sec','Data Disk Write Bytes/sec'],
-    ['Data Disk Read Operations/Sec','Data Disk Write Operations/Sec']
-  ];
-  var all=[];
-  var seen={};
-  var chain=Promise.resolve();
-  batches.forEach(function(batch){
-    var key=batch[0].toLowerCase().replace(/[\s/]/g,'').replace('sec','').replace('total','').replace('bytes','');
-    if(seen[key])return;
-    chain=chain.then(function(){
-      return azGet(
-        MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
-        '&timespan='+ts+'&interval=PT1H' +
-        '&metricnames='+encodeURIComponent(batch.join(',')) +
-        '&aggregation=Average,Maximum,Minimum'
-      ).then(function(r){
-        var valid=(r.value||[]).filter(function(m){
-          return m.timeseries&&m.timeseries[0]&&m.timeseries[0].data&&
-            m.timeseries[0].data.some(function(d){return d.average!=null;});
-        });
-        if(valid.length){valid.forEach(function(v){all.push(v);});seen[key]=1;}
-      }).catch(function(){});
+  setState({busy:true});
+  try {
+    const redirect = location.href.split('?')[0].split('#')[0];
+    const r = await fetch(`${TENANT_U(tid)}/oauth2/v2.0/token`,{
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({client_id:cid,code,redirect_uri:redirect,grant_type:'authorization_code',code_verifier:verifier})
     });
-  });
-  return chain.then(function(){
-    return azGet(
-      MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
-      '&timespan='+ts+'&interval=PT1H' +
-      '&metricnames=Available%20Memory%20Bytes&aggregation=Average'
-    ).then(function(r){return {all:all,mem:r.value&&r.value[0]||null};})
-     .catch(function(){return {all:all,mem:null};});
-  });
-}
+    const data = await r.json();
+    if (data.access_token) { S.token=data.access_token; setState({tenantId:tid,clientId:cid}); await loadSubs(data.access_token); }
+    else throw new Error(data.error_description||data.error);
+  } catch(e) { setState({busy:false, err:e.message}); }
+};
 
-function procMetrics(vals,memM,detail){
-  function gm(){
-    for(var i=0;i<arguments.length;i++){
-      var n=arguments[i];
-      for(var j=0;j<vals.length;j++){
-        if(vals[j].name.value===n||vals[j].name.localizedValue===n)return vals[j];
-      }
+// ═══════════════════════════════════════════════════════════
+// BROWSE
+// ═══════════════════════════════════════════════════════════
+const pickSub = async sub => {
+  setState({busy:true,err:null,selSub:sub,rgs:[],vms:[],selRG:null});
+  try {
+    const r = await az(`${MGMT}/subscriptions/${sub.subscriptionId}/resourcegroups?api-version=2023-07-01`);
+    setState({rgs:r.value||[],busy:false});
+  } catch(e) { setState({busy:false,err:e.message}); }
+};
+
+const pickRG = async rg => {
+  setState({busy:true,err:null,selRG:rg,vms:[]});
+  try {
+    const subId = S.selSub.subscriptionId;
+    let found = [];
+
+    // Strategy 1: RG-scoped, multiple API versions
+    for (const api of ['2024-03-01','2023-09-01','2023-03-01','2022-11-01']) {
+      try {
+        const r = await az(`${MGMT}/subscriptions/${subId}/resourceGroups/${encodeURIComponent(rg)}/providers/Microsoft.Compute/virtualMachines?api-version=${api}`);
+        found = r.value||[];
+        if (found.length>0) break;
+      } catch(_) {}
+    }
+
+    // Strategy 2: subscription-wide, filter by RG name
+    if (found.length===0) {
+      try {
+        const r = await az(`${MGMT}/subscriptions/${subId}/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01`);
+        found = (r.value||[]).filter(v=>{
+          const parts=v.id.split('/'), idx=parts.findIndex(p=>p.toLowerCase()==='resourcegroups');
+          return idx>=0 && parts[idx+1]?.toLowerCase()===rg.toLowerCase();
+        });
+      } catch(_) {}
+    }
+
+    if (found.length===0) {
+      setState({vms:[],busy:false,err:`No VMs found in "${rg}". Try another resource group or use "Show ALL VMs" button.`});
+    } else {
+      setState({vms:found,busy:false,err:null});
+    }
+  } catch(e) { setState({busy:false,err:e.message}); }
+};
+
+const showAllVMs = async () => {
+  if (!S.selSub) return;
+  setState({busy:true,err:null,vms:[],selRG:'(All VMs in subscription)'});
+  try {
+    const r = await az(`${MGMT}/subscriptions/${S.selSub.subscriptionId}/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01`);
+    const found = r.value||[];
+    setState({vms:found,busy:false,err:found.length===0?'No VMs found in this subscription.':null});
+  } catch(e) { setState({busy:false,err:e.message}); }
+};
+
+// ═══════════════════════════════════════════════════════════
+// ANALYZE
+// ═══════════════════════════════════════════════════════════
+const analyzeVM = async vm => {
+  setState({busy:true,err:null,selVM:vm,report:null,metrics:null});
+  try {
+    const detail = await az(`${MGMT}${vm.id}?api-version=2023-07-01&$expand=instanceView`);
+    const end=new Date().toISOString(), start=new Date(Date.now()-7*24*3600*1000).toISOString();
+    const ts=`${start}/${end}`;
+
+    // Fetch metrics in flexible batches — handles both old and new naming conventions
+    const batches = [
+      ['Percentage CPU'],
+      ['Network In Total','Network Out Total'],  // newer VMs
+      ['Network In','Network Out'],               // older VMs (Dads_v5 etc.)
+      ['Disk Read Bytes/sec','Disk Write Bytes/sec'],  // newer
+      ['Disk Read Bytes','Disk Write Bytes'],           // older (Dads_v5, etc.)
+      ['Disk Read Operations/Sec','Disk Write Operations/Sec'],
+      ['OS Disk Read Bytes/sec','OS Disk Write Bytes/sec'],
+      ['OS Disk Read Operations/Sec','OS Disk Write Operations/Sec'],
+      ['Data Disk Read Bytes/sec','Data Disk Write Bytes/sec'],
+      ['Data Disk Read Operations/Sec','Data Disk Write Operations/Sec'],
+    ];
+
+    const allMetrics=[], seen=new Set();
+    for (const batch of batches) {
+      const key = batch[0].toLowerCase().replace(/\s|\/sec|total|bytes/g,'');
+      if (seen.has(key)) continue;
+      try {
+        const r = await az(
+          `${MGMT}${vm.id}/providers/Microsoft.Insights/metrics?api-version=2023-10-01` +
+          `&timespan=${ts}&interval=PT1H` +
+          `&metricnames=${encodeURIComponent(batch.join(','))}` +
+          `&aggregation=Average,Maximum,Minimum`
+        );
+        const valid = (r.value||[]).filter(m=>m.timeseries?.[0]?.data?.some(d=>d.average!=null));
+        if (valid.length>0) { allMetrics.push(...valid); seen.add(key); }
+      } catch(_) {} // skip failed batches silently
+    }
+
+    // Memory — Windows only, may fail on Linux (expected)
+    let memMetric=null;
+    try {
+      const m = await az(
+        `${MGMT}${vm.id}/providers/Microsoft.Insights/metrics?api-version=2023-10-01` +
+        `&timespan=${ts}&interval=PT1H` +
+        `&metricnames=Available%20Memory%20Bytes&aggregation=Average`
+      );
+      memMetric = m.value?.[0];
+    } catch(_) {}
+
+    const processed = processMetrics(allMetrics, memMetric, detail);
+    setState({vmDetail:detail,metrics:processed,report:buildReport(processed,detail),phase:'analyze',tab:'overview',busy:false,err:null});
+  } catch(e) { setState({busy:false,err:e.message}); }
+};
+
+// ═══════════════════════════════════════════════════════════
+// METRICS PROCESSING
+// ═══════════════════════════════════════════════════════════
+const processMetrics = (vals, memMetric, detail) => {
+  // Flexible lookup — tries multiple name variants, returns first match
+  const gm = (...names) => {
+    for (const n of names) {
+      const f = vals.find(m=>m.name.value===n||m.name.localizedValue===n);
+      if (f) return f;
     }
     return null;
-  }
-  function pts(m){return m&&m.timeseries&&m.timeseries[0]&&m.timeseries[0].data||[];}
-  function avgs(m){return pts(m).map(function(d){return d.average;}).filter(function(v){return v!=null;});}
-  function maxs(m){return pts(m).map(function(d){return d.maximum||d.average||0;});}
-
-  var cpu=gm('Percentage CPU');
-  var ca=avgs(cpu);
-  var cm=maxs(cpu);
-  var cpuAvg=r1(avg(ca));
-  var cpuMax=r1(cm.length?Math.max.apply(null,cm):0);
-  var ca2=ca.filter(function(v){return v>0;});
-  var cpuMin=r1(ca2.length?Math.min.apply(null,ca2):0);
-  var cpuP95=r1(pctile(ca,95));
-  var vmSize=detail.properties&&detail.properties.hardwareProfile&&detail.properties.hardwareProfile.vmSize||'Unknown';
-  var si=CAT[vmSize]||{v:2,r:8,c:0.096};
-  var memPct=null;
-  if(memM){var ma=avg(avgs(memM));if(ma>0)memPct=r1(((si.r*1073741824-ma)/(si.r*1073741824))*100);}
-
-  var diskR=gm('Disk Read Bytes/sec','Disk Read Bytes','OS Disk Read Bytes/sec');
-  var diskW=gm('Disk Write Bytes/sec','Disk Write Bytes','OS Disk Write Bytes/sec');
-  var diskRO=gm('Disk Read Operations/Sec','OS Disk Read Operations/Sec');
-  var diskWO=gm('Disk Write Operations/Sec','OS Disk Write Operations/Sec');
-  var ddR=gm('Data Disk Read Bytes/sec','Data Disk Read Bytes');
-  var ddW=gm('Data Disk Write Bytes/sec','Data Disk Write Bytes');
-  var ddRO=gm('Data Disk Read Operations/Sec');
-  var ddWO=gm('Data Disk Write Operations/Sec');
-  var netIn=gm('Network In Total','Network In');
-  var netOut=gm('Network Out Total','Network Out');
-  var MB=1048576;
-  function mk(m,d){d=d||1;var a=avgs(m);return r2(a.length?avg(a)/d:0);}
-  function mx(m,d){d=d||1;var a=avgs(m);return r2(a.length?Math.max.apply(null,a)/d:0);}
-
-  var dm={};
-  pts(cpu).forEach(function(d){
-    if(d.average==null)return;
-    var day=d.timeStamp.slice(0,10);
-    if(!dm[day])dm[day]=[];
-    dm[day].push(d.average);
-  });
-  var chart=Object.keys(dm).map(function(day){
-    var c=dm[day];
-    return{date:day.slice(5),avgCPU:r1(avg(c)),maxCPU:r1(Math.max.apply(null,c))};
-  });
-
-  return{
-    vmSize:vmSize,si:si,
-    cpuAvg:cpuAvg,cpuMax:cpuMax,cpuMin:cpuMin,cpuP95:cpuP95,memPct:memPct,
-    avgDiskR:mk(diskR,MB),avgDiskW:mk(diskW,MB),
-    avgROps:Math.round(mk(diskRO)),avgWOps:Math.round(mk(diskWO)),
-    maxROps:Math.round(mx(diskRO)),maxWOps:Math.round(mx(diskWO)),
-    avgDdR:mk(ddR,MB),avgDdW:mk(ddW,MB),
-    avgDdROps:Math.round(mk(ddRO)),avgDdWOps:Math.round(mk(ddWO)),
-    totIn:r2(sumArr(avgs(netIn))/1073741824),
-    totOut:r2(sumArr(avgs(netOut))/1073741824),
-    chart:chart
   };
-}
+  const pts  = m => m?.timeseries?.[0]?.data||[];
+  const avgs = m => pts(m).map(d=>d.average).filter(v=>v!=null);
+  const maxs = m => pts(m).map(d=>d.maximum||d.average||0);
 
-function buildReport(m,detail){
-  var recs=[];
-  var score=100;
+  const cpu     = gm('Percentage CPU');
+  const cpuAvgs = avgs(cpu);
+  const cpuMaxs = maxs(cpu);
+  const cpuAvg  = r1(avg(cpuAvgs));
+  const cpuMax  = r1(cpuMaxs.length ? Math.max(0,...cpuMaxs) : 0);
+  const cpuMin  = r1(cpuAvgs.filter(v=>v>0).length ? Math.min(...cpuAvgs.filter(v=>v>0)) : 0);
+  const cpuP95  = r1(perc(cpuAvgs,95));
 
-  if(m.cpuAvg<5){
-    score-=35;
-    recs.push({sev:'critical',cat:'Cost',title:'Severely underutilized CPU',detail:'Avg CPU only '+m.cpuAvg+'% over 7 days.',action:'Downsize or deallocate.',savings:'Up to 70-80% cost reduction'});
-  } else if(m.cpuAvg<20&&m.cpuMax<60){
-    score-=20;
-    recs.push({sev:'high',cat:'Cost',title:'CPU over-provisioned',detail:'Avg: '+m.cpuAvg+'%, peak: '+m.cpuMax+'%.',action:'Consider halving vCPU count.',savings:'30-50% cost reduction'});
-  } else if(m.cpuAvg>85||m.cpuMax>95){
-    score-=25;
-    recs.push({sev:'critical',cat:'Performance',title:'CPU saturation',detail:'Avg: '+m.cpuAvg+'%, peak: '+m.cpuMax+'%.',action:'Scale up or enable Autoscale.',savings:'N/A'});
-  } else if(m.cpuAvg>70){
-    score-=10;
-    recs.push({sev:'medium',cat:'Performance',title:'Elevated CPU',detail:'Avg '+m.cpuAvg+'%.',action:'Plan scale-up.',savings:'Preventive'});
+  const vmSize = detail.properties?.hardwareProfile?.vmSize;
+  const si     = VM_CATALOG[vmSize]||{vcpu:2,ram:8,tier:'general',cost:0.096};
+
+  // Memory (Windows only)
+  let memPct=null;
+  if (memMetric) {
+    const a = avg(avgs(memMetric));
+    if (a>0) memPct = r1(((si.ram*1073741824-a)/(si.ram*1073741824))*100);
   }
 
-  if(m.memPct!==null){
-    if(m.memPct>85){
-      score-=20;
-      recs.push({sev:'critical',cat:'Memory',title:'High memory pressure',detail:m.memPct+'% used.',action:'Upgrade to E-series SKU.',savings:'N/A'});
-    } else if(m.memPct<20){
-      score-=10;
-      recs.push({sev:'medium',cat:'Memory',title:'Low memory utilization',detail:'Only '+m.memPct+'% used.',action:'Move to smaller RAM SKU.',savings:'15-30% cost reduction'});
-    }
-  }
+  // Disk — try both naming conventions
+  const diskR  = gm('Disk Read Bytes/sec',  'Disk Read Bytes',  'OS Disk Read Bytes/sec');
+  const diskW  = gm('Disk Write Bytes/sec', 'Disk Write Bytes', 'OS Disk Write Bytes/sec');
+  const diskRO = gm('Disk Read Operations/Sec',  'OS Disk Read Operations/Sec');
+  const diskWO = gm('Disk Write Operations/Sec', 'OS Disk Write Operations/Sec');
+  const ddR    = gm('Data Disk Read Bytes/sec',  'Data Disk Read Bytes');
+  const ddW    = gm('Data Disk Write Bytes/sec', 'Data Disk Write Bytes');
+  const ddRO   = gm('Data Disk Read Operations/Sec');
+  const ddWO   = gm('Data Disk Write Operations/Sec');
+  const netIn  = gm('Network In Total',  'Network In');
+  const netOut = gm('Network Out Total', 'Network Out');
 
-  if(m.avgROps<1&&m.avgWOps<1&&m.avgDiskR<0.1&&m.avgDiskW<0.1){
-    score-=5;
-    recs.push({sev:'low',cat:'Storage',title:'Negligible OS disk I/O',detail:'Read: '+m.avgDiskR+' MB/s, Write: '+m.avgDiskW+' MB/s.',action:'Downgrade to Standard SSD.',savings:'$15-30/month'});
-  } else if(m.maxROps>5000||m.maxWOps>5000){
-    score-=10;
-    recs.push({sev:'medium',cat:'Storage',title:'Peak IOPS are high',detail:'Peak Read: '+m.maxROps+', Write: '+m.maxWOps+'.',action:'Ensure Premium SSD or Ultra Disk.',savings:'Performance'});
-  }
+  const MB = 1048576;
+  const mk = (m,div=1) => { const a=avgs(m); return r2(a.length ? avg(a)/div : 0); };
+  const mx = (m,div=1) => { const a=avgs(m); return r2(a.length ? Math.max(0,...a)/div : 0); };
 
-  if(m.avgDdROps<5&&m.avgDdWOps<5&&(m.avgDdR>0||m.avgDdW>0)){
-    recs.push({sev:'low',cat:'Storage',title:'Data disk low IOPS',detail:'Read: '+m.avgDdROps+', Write: '+m.avgDdWOps+' IOPS.',action:'Move to Standard HDD/SSD.',savings:'Up to 60%'});
-  }
-
-  var rs=getRightSize(m);
-  if(rs&&rs.size!==m.vmSize){
-    var cur=m.si.c;
-    var nc=(CAT[rs.size]&&CAT[rs.size].c)||cur;
-    if(nc<cur){
-      var sp=Math.round((cur-nc)/cur*100);
-      var sm=Math.round((cur-nc)*730);
-      recs.push({sev:'high',cat:'Right-Sizing',title:'Recommended: '+rs.size,detail:m.vmSize+' -> '+rs.size+'. '+rs.reason,action:'Resize via Azure Portal -> VM -> Size.',savings:'~'+sp+'% (~$'+sm+'/mo)'});
-    }
-  }
-
-  recs.push({sev:'info',cat:'Cost',title:'Consider Reserved Instances',detail:'1 or 3-year reservations unlock major discounts.',action:'Azure Portal -> Reservations.',savings:'Up to 40-72% vs PAYG'});
-  recs.push({sev:'info',cat:'Governance',title:'Enable auto-shutdown',detail:'Reduces idle costs for non-prod VMs.',action:'Azure Portal -> VM -> Auto-shutdown.',savings:'Up to 60%'});
-
-  var tags=detail.tags||{};
-  var missing=['Environment','Owner','CostCenter','Application'].filter(function(t){return !tags[t];});
-  if(missing.length){
-    score-=5;
-    recs.push({sev:'low',cat:'Governance',title:'Missing tags: '+missing.join(', '),detail:'Untagged resources make cost attribution difficult.',action:'Add standard tags.',savings:'Better governance'});
-  }
-
-  recs.push({sev:'info',cat:'Tooling',title:'Enable Azure Advisor',detail:'Continuously surfaces recommendations.',action:'Navigate to Azure Advisor.',savings:'Ongoing'});
-
-  return{score:Math.max(0,Math.round(score)),recs:recs,monthlyCost:r2(m.si.c*730),rs:rs};
-}
-
-function getRightSize(m){
-  var tc=m.si.v,tr=m.si.r;
-  if(m.cpuAvg<10)tc=Math.max(1,Math.floor(m.si.v/2));
-  else if(m.cpuAvg>80)tc=m.si.v*2;
-  if(m.memPct!==null){
-    if(m.memPct<20)tr=Math.max(1,Math.floor(m.si.r/2));
-    else if(m.memPct>85)tr=m.si.r*2;
-  }
-  var best=null,bd=Infinity;
-  Object.keys(CAT).forEach(function(sz){
-    var info=CAT[sz];
-    if(info.v>=tc&&info.r>=tr){
-      var d=(info.v-tc)*2+(info.r-tr);
-      if(d<bd){bd=d;best=sz;}
-    }
+  // Daily CPU for chart
+  const dailyMap={};
+  pts(cpu).forEach(d=>{
+    if (d.average==null) return;
+    const day=d.timeStamp.slice(0,10);
+    if (!dailyMap[day]) dailyMap[day]={cpus:[]};
+    dailyMap[day].cpus.push(d.average);
   });
-  return best?{size:best,reason:'Target: '+tc+' vCPU / '+tr+' GB RAM.'}:null;
-}
+  const chartData = Object.entries(dailyMap).map(([day,v])=>({
+    date:day.slice(5), avgCPU:r1(avg(v.cpus)), maxCPU:r1(Math.max(...v.cpus))
+  }));
 
-// ── DOM helpers ──────────────────────────────────────────────
-function h(tag,attrs,kids){
-  var e=document.createElement(tag);
-  if(attrs)Object.keys(attrs).forEach(function(k){
-    var v=attrs[k];
-    if(k==='style'&&typeof v==='object'){Object.assign(e.style,v);}
-    else if(k==='cls'){e.className=v;}
-    else if(k.slice(0,2)==='on'){e.addEventListener(k.slice(2),v);}
-    else{e.setAttribute(k,v);}
-  });
-  if(kids)(Array.isArray(kids)?kids:[kids]).forEach(function(c){
-    if(c!=null)e.appendChild(typeof c==='string'?document.createTextNode(c):c);
-  });
-  return e;
-}
-function div(style,kids){return h('div',{style:style},kids);}
-function txt(s){return document.createTextNode(String(s));}
-
-function card(kids,extra){
-  return div(Object.assign({background:'white',borderRadius:'12px',border:'1px solid #e5e7eb',boxShadow:'0 1px 3px rgba(0,0,0,.06)',padding:'20px'},extra||{}),kids);
-}
-function btn(label,onclick,opts){
-  opts=opts||{};
-  var v=opts.variant||'primary';
-  var th={
-    primary:{background:'#2563eb',color:'white',border:'none'},
-    secondary:{background:'white',color:'#374151',border:'1px solid #d1d5db'},
-    ghost:{background:'transparent',color:'#6b7280',border:'none'}
+  return {
+    vmSize,si,cpuAvg,cpuMax,cpuMin,cpuP95,memPct,
+    avgDiskR:mk(diskR,MB), avgDiskW:mk(diskW,MB),
+    avgROps:Math.round(mk(diskRO)), avgWOps:Math.round(mk(diskWO)),
+    maxROps:Math.round(mx(diskRO)), maxWOps:Math.round(mx(diskWO)),
+    avgDdR:mk(ddR,MB),  avgDdW:mk(ddW,MB),
+    avgDdROps:Math.round(mk(ddRO)), avgDdWOps:Math.round(mk(ddWO)),
+    totIn:r2(sum(avgs(netIn))/1073741824),
+    totOut:r2(sum(avgs(netOut))/1073741824),
+    chartData,
   };
-  var b=h('button',{style:Object.assign({},th[v],{
-    borderRadius:'8px',cursor:opts.disabled?'not-allowed':'pointer',fontWeight:'600',
-    fontSize:opts.sm?'12px':'14px',padding:opts.sm?'7px 14px':'11px 22px',
-    opacity:opts.disabled?0.55:1,width:opts.full?'100%':'auto',transition:'all .15s'
-  })},[label]);
-  if(!opts.disabled&&onclick)b.addEventListener('click',onclick);
-  return b;
-}
-function errBox(msg){
-  if(!msg)return null;
-  return div({background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'8px',padding:'10px 14px',marginBottom:'14px',fontSize:'13px',color:'#dc2626'},['Error: '+msg]);
-}
-function sCard(label,val,unit,sub,color,warn){
-  return div({background:'white',borderRadius:'12px',border:'1.5px solid '+(warn?'#fca5a5':'#e5e7eb'),padding:'16px',textAlign:'center'},[
-    div({fontSize:'11px',color:'#6b7280',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'6px'},[label]),
-    div({fontSize:'24px',fontWeight:'900',color:color||'#1d4ed8',lineHeight:'1'},[String(val),unit?h('span',{style:{fontSize:'12px',color:'#6b7280',marginLeft:'2px'}},[unit]):null].filter(Boolean)),
-    sub?div({fontSize:'11px',color:'#9ca3af',marginTop:'4px'},[sub]):null
-  ].filter(Boolean));
-}
-function rowItem(k,v){
-  return div({display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #f3f4f6',fontSize:'13px'},[
-    h('span',{style:{color:'#6b7280'}},[k]),
-    h('span',{style:{fontWeight:'600',color:'#111827',maxWidth:'240px',textAlign:'right',wordBreak:'break-all'}},[String(v||'--')])
-  ]);
-}
-function barTbl(rows){
-  var vals=rows.map(function(r){return parseFloat(r.v)||0;});
-  var mx=Math.max.apply(null,[1].concat(vals));
-  var tb=h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  var tbody=h('tbody');
-  rows.forEach(function(r){
-    var w=Math.round((parseFloat(r.v)||0)/mx*100);
-    var bar=div({background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'80px'},[
-      div({height:'8px',borderRadius:'4px',background:'#2563eb',width:w+'%',minWidth:'2px'},[])
-    ]);
-    tbody.appendChild(h('tr',{style:{borderBottom:'1px solid #f3f4f6'}},[
-      h('td',{style:{padding:'7px 8px',color:'#6b7280',whiteSpace:'nowrap'}},[r.name]),
-      h('td',{style:{padding:'7px 8px',textAlign:'right',fontWeight:'700',color:'#111827'}},[String(r.v)]),
-      h('td',{style:{padding:'7px 8px',minWidth:'90px'}},[bar])
-    ]));
-  });
-  tb.appendChild(tbody);
-  return tb;
-}
-function cpuTbl(data){
-  var t=h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px'}});
-  var thead=h('thead');
-  var hr=h('tr');
-  ['Date','Avg %','Max %','Trend'].forEach(function(lbl){
-    hr.appendChild(h('th',{style:{textAlign:'left',padding:'6px 8px',borderBottom:'2px solid #e5e7eb',color:'#6b7280',fontWeight:'600'}},[lbl]));
-  });
-  thead.appendChild(hr);t.appendChild(thead);
-  var tbody=h('tbody');
-  if(!data.length)tbody.appendChild(h('tr',{},[h('td',{colspan:'4',style:{padding:'12px',color:'#9ca3af',textAlign:'center'}},['No data'])]));
-  data.forEach(function(d){
-    var col=d.avgCPU>80?'#dc2626':d.avgCPU>50?'#f59e0b':'#2563eb';
-    var bar=div({background:'#f3f4f6',borderRadius:'4px',overflow:'hidden',minWidth:'100px'},[
-      div({height:'8px',borderRadius:'4px',background:col,width:Math.round(d.avgCPU)+'%',minWidth:'2px'},[])
-    ]);
-    tbody.appendChild(h('tr',{style:{borderBottom:'1px solid #f3f4f6'}},[
-      h('td',{style:{padding:'7px 8px',fontWeight:'600',color:'#374151'}},[d.date]),
-      h('td',{style:{padding:'7px 8px',color:col,fontWeight:'700'}},[d.avgCPU+'%']),
-      h('td',{style:{padding:'7px 8px',color:'#9ca3af'}},[d.maxCPU+'%']),
-      h('td',{style:{padding:'7px 8px'}},[bar])
-    ]));
-  });
-  t.appendChild(tbody);
-  return t;
-}
-
-// ── DRAW ─────────────────────────────────────────────────────
-function draw(){
-  var root=document.getElementById('root');
-  root.innerHTML='';
-  if(S.phase==='auth')root.appendChild(drawAuth());
-  else if(S.phase==='browse')root.appendChild(drawBrowse());
-  else if(S.phase==='analyze'&&S.report)root.appendChild(drawAnalyze());
-  else root.appendChild(div({display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280'},['Loading...']));
-}
-
-// ── AUTH ──────────────────────────────────────────────────────
-function drawAuth(){
-  var wrap=div({minHeight:'100vh',background:'linear-gradient(145deg,#0f172a,#1e3a8a,#1d4ed8)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'});
-  var inner=div({width:'100%',maxWidth:'400px'});
-  inner.appendChild(div({textAlign:'center',marginBottom:'28px',color:'white'},[
-    div({fontSize:'48px',marginBottom:'8px'},['☁']),
-    h('h1',{style:{fontSize:'24px',fontWeight:'900',color:'white',marginBottom:'6px'}},['Azure VM Optimizer']),
-    h('p',{style:{color:'#93c5fd',fontSize:'13px'}},['Analyze and optimize your Azure Virtual Machines'])
-  ]));
-  var c=card([],{padding:'28px'});
-  if(S.busy){
-    c.appendChild(div({textAlign:'center',padding:'24px 0',color:'#6b7280'},[
-      div({fontSize:'28px',marginBottom:'12px'},['...']),
-      div({fontWeight:'600',fontSize:'14px',color:'#374151'},['Completing sign-in...'])
-    ]));
-  } else {
-    var eb=errBox(S.err);if(eb)c.appendChild(eb);
-    // MS button
-    var msb=h('button',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',
-      width:'100%',padding:'13px 20px',background:'white',border:'1.5px solid #d1d5db',
-      borderRadius:'10px',cursor:'pointer',fontSize:'15px',fontWeight:'600',color:'#374151',
-      boxShadow:'0 1px 3px rgba(0,0,0,.1)',marginBottom:'16px',transition:'all .15s'}});
-    // MS logo
-    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('width','20');svg.setAttribute('height','20');svg.setAttribute('viewBox','0 0 20 20');
-    [['#f25022',0,0],['#7fba00',11,0],['#00a4ef',0,11],['#ffb900',11,11]].forEach(function(x){
-      var r=document.createElementNS('http://www.w3.org/2000/svg','rect');
-      r.setAttribute('x',x[1]);r.setAttribute('y',x[2]);r.setAttribute('width','9');r.setAttribute('height','9');r.setAttribute('fill',x[0]);
-      svg.appendChild(r);
-    });
-    msb.appendChild(svg);
-    msb.appendChild(document.createTextNode('Sign in with Microsoft'));
-    msb.addEventListener('click',startLogin);
-    c.appendChild(msb);
-    c.appendChild(div({textAlign:'center',fontSize:'12px',color:'#9ca3af',marginBottom:'16px'},['Supports MFA - Full Microsoft login experience']));
-    c.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'12px',fontSize:'12px',color:'#6b7280',lineHeight:'1.6',marginBottom:'16px'},[
-      h('strong',{style:{color:'#374151'}},['First time setup: ']),
-      'Create an App Registration in Entra ID. Set this page URL as the SPA Redirect URI and grant Azure Service Management user_impersonation permission.'
-    ]));
-
-    // divider
-    c.appendChild(div({display:'flex',alignItems:'center',gap:'8px',marginBottom:'16px'},[
-      div({flex:'1',height:'1px',background:'#e5e7eb'},[]),
-      h('span',{style:{fontSize:'12px',color:'#9ca3af'}},['or']),
-      div({flex:'1',height:'1px',background:'#e5e7eb'},[])
-    ]));
-
-    // Bearer Token section
-    c.appendChild(h('p',{style:{fontSize:'12px',fontWeight:'700',color:'#374151',marginBottom:'6px'}},['📋 Paste Bearer Token']));
-    var infoBox = div({background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px',fontSize:'11px',color:'#0369a1',lineHeight:'1.6'});
-    infoBox.innerHTML = '<strong>Run in PowerShell:</strong><br/>' +
-      '<code style="display:block;margin-top:4px;background:#e0f2fe;padding:4px 8px;border-radius:4px;word-break:break-all;font-family:monospace;font-size:10px">az login</code>' +
-      '<code style="display:block;margin-top:4px;background:#e0f2fe;padding:4px 8px;border-radius:4px;word-break:break-all;font-family:monospace;font-size:10px">az account set --subscription 596d8c38-b6e5-4528-835f-3d47e4862d08</code>' +
-      '<code style="display:block;margin-top:4px;background:#e0f2fe;padding:4px 8px;border-radius:4px;word-break:break-all;font-family:monospace;font-size:10px">az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv</code>';
-    c.appendChild(infoBox);
-    var ta=h('textarea',{rows:'3',placeholder:'Paste token here: eyJ0eXAiOiJKV1Qi...',
-      style:{width:'100%',boxSizing:'border-box',padding:'9px 12px',border:'1.5px solid #d1d5db',
-        borderRadius:'8px',fontSize:'12px',fontFamily:'monospace',resize:'vertical',marginBottom:'8px'}});
-    c.appendChild(ta);
-    var conBtn=btn('Connect with Token',function(){
-      window._pasteToken(ta.value);
-    },{full:true,variant:'secondary'});
-    c.appendChild(conBtn);
-  }
-  inner.appendChild(c);
-  wrap.appendChild(inner);
-  return wrap;
-}
-
-// ── BROWSE ────────────────────────────────────────────────────
-function drawBrowse(){
-  function go(fn){
-    set({busy:true,err:null});
-    fn().then(function(){set({busy:false});}).catch(function(e){set({busy:false,err:e.message});});
-  }
-  var wrap=div({minHeight:'100vh',background:'#f8fafc'});
-  // header
-  var hdr=div({background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'});
-  hdr.appendChild(div({fontWeight:'800',fontSize:'15px',color:'#111827'},['☁ Azure VM Optimizer']));
-  hdr.appendChild(div({background:'#dcfce7',color:'#15803d',fontSize:'11px',fontWeight:'700',padding:'2px 10px',borderRadius:'99px'},['Signed in']));
-  if(S.busy)hdr.appendChild(div({color:'#6b7280',fontSize:'12px'},['Loading...']));
-  var sob=btn('Sign out',function(){set({token:null,phase:'auth',subs:[],selSub:null,rgs:[],selRG:null,vms:[]});},{variant:'secondary',sm:true});
-  sob.style.marginLeft='auto';
-  hdr.appendChild(sob);
-  var body=div({maxWidth:'960px',margin:'0 auto',padding:'24px'});
-  var eb=errBox(S.err);if(eb)body.appendChild(eb);
-  var grid=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'});
-
-  // subscriptions
-  var filtSubs=S.subs.filter(function(s){
-    var q=S.subQ.toLowerCase();
-    return s.displayName.toLowerCase().indexOf(q)>=0||s.subscriptionId.toLowerCase().indexOf(q)>=0;
-  });
-  var srch=h('input',{type:'text',value:S.subQ,placeholder:'Search subscriptions...',
-    style:{width:'100%',padding:'8px 12px',border:'1.5px solid #e5e7eb',borderRadius:'8px',fontSize:'12px',marginBottom:'10px',boxSizing:'border-box'}});
-  srch.addEventListener('input',function(e){S.subQ=e.target.value;draw();});
-  var subList=div({display:'flex',flexDirection:'column',gap:'7px',maxHeight:'300px',overflowY:'auto'});
-  filtSubs.forEach(function(s){
-    var active=S.selSub&&S.selSub.subscriptionId===s.subscriptionId;
-    var b=div({textAlign:'left',padding:'10px 13px',borderRadius:'8px',border:'1.5px solid '+(active?'#2563eb':'#e5e7eb'),background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px'},[
-      div({fontWeight:'700',color:'#111827'},[s.displayName]),
-      div({color:'#9ca3af',fontSize:'11px',fontFamily:'monospace',marginTop:'2px'},[s.subscriptionId])
-    ]);
-    b.addEventListener('click',function(){
-      go(function(){
-        set({selSub:s,rgs:[],vms:[],selRG:null});
-        return azGet(MGMT+'/subscriptions/'+s.subscriptionId+'/resourcegroups?api-version=2023-07-01').then(function(r){set({rgs:r.value||[]});});
-      });
-    });
-    subList.appendChild(b);
-  });
-  grid.appendChild(card([h('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Subscription']),srch,subList]));
-
-  // resource groups
-  if(S.selSub){
-    var rgList=div({display:'flex',flexDirection:'column',gap:'7px',maxHeight:'300px',overflowY:'auto'});
-    S.rgs.forEach(function(rg){
-      var active=S.selRG===rg.name;
-      var b=div({padding:'9px 13px',borderRadius:'8px',border:'1.5px solid '+(active?'#2563eb':'#e5e7eb'),background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px',fontWeight:'600',color:'#111827'},[
-        rg.name+' ',h('span',{style:{color:'#9ca3af',fontWeight:'400',fontSize:'11px'}},[rg.location])
-      ]);
-      b.addEventListener('click',function(){
-        go(function(){
-          set({selRG:rg.name,vms:[]});
-          var sid=S.selSub.subscriptionId;
-          var apis=['2024-03-01','2023-09-01','2023-03-01'];
-          var found=[];
-          var chain=Promise.resolve();
-          apis.forEach(function(api){
-            chain=chain.then(function(){
-              if(found.length)return Promise.resolve();
-              return azGet(MGMT+'/subscriptions/'+sid+'/resourceGroups/'+encodeURIComponent(rg.name)+'/providers/Microsoft.Compute/virtualMachines?api-version='+api)
-                .then(function(r){found=r.value||[];}).catch(function(){});
-            });
-          });
-          return chain.then(function(){
-            if(found.length){set({vms:found});return;}
-            return azGet(MGMT+'/subscriptions/'+sid+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01').then(function(r){
-              var all=r.value||[];
-              found=all.filter(function(v){
-                var p=v.id.split('/');
-                var i=p.indexOf('resourceGroups');
-                if(i<0)i=p.map(function(x){return x.toLowerCase();}).indexOf('resourcegroups');
-                return i>=0&&p[i+1]&&p[i+1].toLowerCase()===rg.name.toLowerCase();
-              });
-              set({vms:found,err:found.length?null:'No VMs found in "'+rg.name+'".'});
-            });
-          });
-        });
-      });
-      rgList.appendChild(b);
-    });
-    grid.appendChild(card([h('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'10px'}},['Resource Group']),rgList]));
-  }
-  body.appendChild(grid);
-
-  if(S.selSub){
-    var allBtn=btn('Show ALL VMs in subscription',function(){
-      go(function(){
-        set({selRG:'All VMs',vms:[]});
-        return azGet(MGMT+'/subscriptions/'+S.selSub.subscriptionId+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01').then(function(r){
-          var found=r.value||[];
-          set({vms:found,err:found.length?null:'No VMs found.'});
-        });
-      });
-    },{variant:'secondary',sm:true});
-    body.appendChild(div({marginBottom:'14px'},[allBtn]));
-  }
-
-  if(S.vms.length>0){
-    var vmGrid=div({display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(270px,1fr))',gap:'12px'});
-    S.vms.forEach(function(vm){
-      var sz=(vm.properties&&vm.properties.hardwareProfile&&vm.properties.hardwareProfile.vmSize)||'';
-      var info=CAT[sz];
-      var vmos=(vm.properties&&vm.properties.storageProfile&&vm.properties.storageProfile.osDisk&&vm.properties.storageProfile.osDisk.osType)||'Linux';
-      var parts=vm.id.split('/');
-      var rgi=-1;
-      parts.forEach(function(p,i){if(p.toLowerCase()==='resourcegroups')rgi=i;});
-      var vmRG=rgi>=0?parts[rgi+1]:'';
-      var ab=btn(S.busy?'Analyzing...':'Analyze and Optimize',function(){
-        go(function(){
-          set({selVM:vm,report:null,metrics:null});
-          return azGet(MGMT+vm.id+'?api-version=2023-07-01&$expand=instanceView').then(function(detail){
-            set({vmDetail:detail});
-            return fetchMetrics(vm.id).then(function(res){
-              var proc=procMetrics(res.all,res.mem,detail);
-              set({metrics:proc,report:buildReport(proc,detail),phase:'analyze',tab:'overview'});
-            });
-          });
-        });
-      },{sm:true,disabled:S.busy});
-      vmGrid.appendChild(div({border:'1.5px solid #e5e7eb',borderRadius:'10px',padding:'16px',background:'white'},[
-        div({fontWeight:'700',fontSize:'14px',color:'#111827',marginBottom:'3px'},[(vmos==='Windows'?'[Win] ':'[Lin] ')+vm.name]),
-        div({fontSize:'11px',color:'#9ca3af',marginBottom:'6px'},[vm.location+(vmRG?' - '+vmRG:'')]),
-        div({fontSize:'12px',color:'#374151',marginBottom:'12px'},[
-          h('strong',{},[sz]),
-          info?h('span',{style:{color:'#6b7280'}},['  '+info.v+' vCPU  '+info.r+' GB  ~$'+r2(info.c*730)+'/mo']):null
-        ].filter(Boolean)),
-        ab
-      ]));
-    });
-    body.appendChild(card([h('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'14px'}},['Virtual Machines - '+(S.selRG||'')]),vmGrid]));
-  } else if(S.selSub&&!S.busy&&!S.err){
-    body.appendChild(card([div({color:'#9ca3af',fontSize:'13px'},['Select a resource group or click Show ALL VMs.'])]));
-  }
-  wrap.appendChild(hdr);wrap.appendChild(body);
-  return wrap;
-}
-
-// ── ANALYZE ───────────────────────────────────────────────────
-function drawAnalyze(){
-  var m=S.metrics,rep=S.report,vd=S.vmDetail;
-  var tags=vd&&vd.tags||{};
-  var os=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk&&vd.properties.storageProfile.osDisk.osType)||'Linux';
-  var statuses=vd&&vd.properties&&vd.properties.instanceView&&vd.properties.instanceView.statuses||[];
-  var pwS=null;
-  statuses.forEach(function(s){if(s.code&&s.code.indexOf('PowerState/')===0)pwS=s;});
-  var pw=(pwS&&pwS.displayStatus)||'Unknown';
-  var osDisk=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.osDisk;
-  var dataDisks=(vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.dataDisks)||[];
-  var allDisks=[osDisk].concat(dataDisks).filter(Boolean);
-  var TABS=['overview','cpu','disk','network','recommendations','details'];
-
-  var wrap=div({minHeight:'100vh',background:'#f8fafc'});
-  var hdr=div({background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'});
-  hdr.appendChild(btn('Back',function(){set({phase:'browse'});},{variant:'secondary',sm:true}));
-  hdr.appendChild(div({fontWeight:'800',fontSize:'15px',color:'#111827'},[(os==='Windows'?'[Win] ':'[Lin] ')+(S.selVM&&S.selVM.name||'')]));
-  hdr.appendChild(div({fontSize:'12px',color:'#6b7280'},[m.vmSize+' - '+(S.selVM&&S.selVM.location||'')]));
-  var pwBadge=div({background:pw.indexOf('running')>=0?'#dcfce7':'#fef3c7',color:pw.indexOf('running')>=0?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'},[pw]);
-  pwBadge.style.marginLeft='auto';
-  hdr.appendChild(pwBadge);
-
-  var body=div({maxWidth:'1120px',margin:'0 auto',padding:'24px'});
-
-  // score banner
-  var banner=div({display:'grid',gridTemplateColumns:'170px 1fr',gap:'16px',marginBottom:'20px'});
-  banner.appendChild(card([
-    div({fontSize:'11px',fontWeight:'700',color:'#6b7280',marginBottom:'8px'},['OPTIMIZATION SCORE']),
-    div({fontSize:'64px',fontWeight:'900',color:scC(rep.score),lineHeight:'1'},[String(rep.score)]),
-    div({fontSize:'12px',color:scC(rep.score),marginTop:'6px',fontWeight:'700'},[rep.score>=80?'Well Optimized':rep.score>=60?'Needs Attention':'Needs Work']),
-    div({marginTop:'10px',fontSize:'12px',color:'#374151'},['~$'+rep.monthlyCost+'/month'])
-  ],{textAlign:'center',background:scBg(rep.score)}));
-  var chips=div({display:'flex',flexWrap:'wrap',gap:'7px',marginBottom:'8px'});
-  rep.recs.forEach(function(r){
-    var s=SEV[r.sev];
-    chips.appendChild(div({background:s.bg,color:s.tx,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'99px',border:'1px solid '+s.bd},[r.title]));
-  });
-  var sc2=card([div({fontSize:'13px',fontWeight:'700',color:'#111827',marginBottom:'10px'},[rep.recs.length+' Recommendations - 7-day analysis']),chips]);
-  if(rep.rs&&rep.rs.size!==m.vmSize){
-    sc2.appendChild(div({marginTop:'8px',padding:'9px 12px',background:'#f0fdf4',borderRadius:'8px',fontSize:'12px',color:'#15803d',fontWeight:'600'},['Right-size to '+rep.rs.size+' - '+rep.rs.reason]));
-  }
-  banner.appendChild(sc2);
-  body.appendChild(banner);
-
-  // tabs
-  var tabBar=div({display:'flex',gap:'3px',marginBottom:'20px',background:'white',borderRadius:'10px',padding:'5px',border:'1px solid #e5e7eb',width:'fit-content'});
-  TABS.forEach(function(t){
-    var b=h('button',{cls:'tabbtn'+(S.tab===t?' on':'')},[t.charAt(0).toUpperCase()+t.slice(1)]);
-    b.addEventListener('click',function(){set({tab:t});});
-    tabBar.appendChild(b);
-  });
-  body.appendChild(tabBar);
-
-  var content=div({});
-
-  if(S.tab==='overview'){
-    var g1=div({display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'});
-    g1.appendChild(sCard('Avg CPU',m.cpuAvg,'%','Max '+m.cpuMax+'%  p95 '+m.cpuP95+'%',m.cpuAvg>80?'#dc2626':m.cpuAvg<10?'#d97706':'#2563eb',m.cpuAvg>85||m.cpuAvg<5));
-    g1.appendChild(sCard('Memory',m.memPct!=null?m.memPct:'N/A',m.memPct?'%':'',m.memPct?'Avg 7 days':'Linux/unavailable',!m.memPct?'#9ca3af':m.memPct>85?'#dc2626':'#2563eb',m.memPct>85));
-    g1.appendChild(sCard('Disk Read',m.avgDiskR,'MB/s',m.avgROps+' avg IOPS','#7c3aed'));
-    g1.appendChild(sCard('Disk Write',m.avgDiskW,'MB/s',m.avgWOps+' avg IOPS','#7c3aed'));
-    var g2=div({display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'});
-    g2.appendChild(sCard('Data Disk R',m.avgDdR,'MB/s',m.avgDdROps+' IOPS','#0891b2'));
-    g2.appendChild(sCard('Data Disk W',m.avgDdW,'MB/s',m.avgDdWOps+' IOPS','#0891b2'));
-    g2.appendChild(sCard('Net In 7d',m.totIn,'GB','','#059669'));
-    g2.appendChild(sCard('Net Out 7d',m.totOut,'GB','','#059669'));
-    content.appendChild(g1);content.appendChild(g2);
-    content.appendChild(card([div({fontWeight:'700',fontSize:'13px',color:'#374151',marginBottom:'14px'},['CPU Utilization - Daily Trend']),cpuTbl(m.chart)]));
-  }
-
-  if(S.tab==='cpu'){
-    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
-    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['CPU Statistics']),barTbl([{name:'Average',v:m.cpuAvg+'%'},{name:'Maximum',v:m.cpuMax+'%'},{name:'p95',v:m.cpuP95+'%'},{name:'Minimum',v:m.cpuMin+'%'}])]));
-    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['Daily Trend']),cpuTbl(m.chart)]));
-    content.appendChild(g);
-  }
-
-  if(S.tab==='disk'){
-    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
-    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['OS Disk']),barTbl([{name:'Read MB/s',v:m.avgDiskR},{name:'Write MB/s',v:m.avgDiskW},{name:'Read IOPS avg',v:m.avgROps},{name:'Write IOPS avg',v:m.avgWOps},{name:'Read IOPS peak',v:m.maxROps},{name:'Write IOPS peak',v:m.maxWOps}])]));
-    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['Data Disk']),barTbl([{name:'Read MB/s',v:m.avgDdR},{name:'Write MB/s',v:m.avgDdW},{name:'Read IOPS',v:m.avgDdROps},{name:'Write IOPS',v:m.avgDdWOps}])]));
-    var dkCard=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Attached Disks'])],{gridColumn:'1 / -1'});
-    var dkGrid=div({display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:'8px'});
-    allDisks.forEach(function(d,i){
-      var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      dkGrid.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'10px'},[
-        div({fontWeight:'700',fontSize:'13px'},[d.name||'(unnamed)']),
-        div({color:'#6b7280',fontSize:'12px',marginTop:'2px'},[(d.diskSizeGB?d.diskSizeGB+' GB - ':'')+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])
-      ]));
-    });
-    dkCard.appendChild(dkGrid);
-    g.appendChild(dkCard);
-    content.appendChild(g);
-  }
-
-  if(S.tab==='network'){
-    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
-    g.appendChild(card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['7-Day Network Totals']),barTbl([{name:'Inbound GB',v:m.totIn},{name:'Outbound GB',v:m.totOut}])]));
-    var nc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Network Summary'])]);
-    [['Total Inbound',m.totIn+' GB'],['Total Outbound',m.totOut+' GB'],['Ratio In:Out',m.totOut>0?'1:'+r2(m.totOut/Math.max(m.totIn,0.01)):'N/A'],['Est. egress','~$'+r2(m.totOut*0.087)]].forEach(function(x){nc.appendChild(rowItem(x[0],x[1]));});
-    nc.appendChild(div({marginTop:'10px',fontSize:'11px',color:'#9ca3af'},['Egress at $0.087/GB West Europe estimate']));
-    g.appendChild(nc);
-    content.appendChild(g);
-  }
-
-  if(S.tab==='recommendations'){
-    var list=div({display:'flex',flexDirection:'column',gap:'13px'});
-    rep.recs.forEach(function(r){
-      var s=SEV[r.sev];
-      var inner=div({flex:'1'},[
-        div({display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'5px'},[
-          h('span',{style:{fontWeight:'800',fontSize:'14px',color:'#111827'}},[r.title]),
-          h('span',{style:{background:'#f3f4f6',color:'#374151',fontSize:'11px',fontWeight:'600',padding:'2px 7px',borderRadius:'99px'}},[r.cat])
-        ]),
-        h('p',{style:{margin:'0 0 7px',fontSize:'13px',color:'#4b5563',lineHeight:'1.5'}},[r.detail]),
-        div({fontSize:'13px',color:'#374151'},[h('strong',{},['Action: ']),r.action]),
-        r.savings?div({marginTop:'5px',fontSize:'13px',color:'#059669',fontWeight:'700'},['Savings: '+r.savings]):null
-      ].filter(Boolean));
-      list.appendChild(div({background:s.bg,borderRadius:'12px',border:'1px solid '+s.bd,padding:'18px',borderLeft:'5px solid '+s.tx},[
-        div({display:'flex',gap:'13px',alignItems:'flex-start'},[
-          h('span',{style:{background:s.tx,color:'white',fontSize:'10px',fontWeight:'800',padding:'3px 8px',borderRadius:'99px',whiteSpace:'nowrap',marginTop:'2px'}},[s.lb]),
-          inner
-        ])
-      ]));
-    });
-    content.appendChild(list);
-  }
-
-  if(S.tab==='details'){
-    var g=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'});
-    var vc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'14px'},['VM Configuration'])]);
-    var imgRef=vd&&vd.properties&&vd.properties.storageProfile&&vd.properties.storageProfile.imageReference;
-    var osDiskSku=osDisk&&osDisk.managedDisk&&osDisk.managedDisk.storageAccountType;
-    [['Name',vd&&vd.name],['Resource Group',S.selRG],['Location',vd&&vd.location],
-     ['VM Size',m.vmSize],['vCPU / RAM',m.si.v+' vCPU / '+m.si.r+' GB'],['OS',os],
-     ['OS Disk SKU',osDiskSku||'--'],['Image',(imgRef&&imgRef.offer)||'Custom'],
-     ['Power State',pw],['Provisioning',vd&&vd.properties&&vd.properties.provisioningState],
-     ['Est. Cost','~$'+rep.monthlyCost+'/mo']
-    ].forEach(function(x){vc.appendChild(rowItem(x[0],String(x[1]||'--')));});
-    g.appendChild(vc);
-    var right=div({display:'flex',flexDirection:'column',gap:'16px'});
-    var tc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Tags'])]);
-    if(!Object.keys(tags).length){tc.appendChild(div({color:'#9ca3af',fontSize:'13px'},['No tags found.']));}
-    else{Object.keys(tags).forEach(function(k){tc.appendChild(rowItem(k,tags[k]));});}
-    var dc=card([div({fontWeight:'700',fontSize:'13px',marginBottom:'12px'},['Attached Disks'])]);
-    allDisks.forEach(function(d,i){
-      var sku=(d.managedDisk&&d.managedDisk.storageAccountType)||'Unmanaged';
-      dc.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'10px',marginBottom:'8px'},[
-        div({fontWeight:'700',fontSize:'13px'},[d.name||'(unnamed)']),
-        div({color:'#6b7280',fontSize:'12px',marginTop:'2px'},[(d.diskSizeGB?d.diskSizeGB+' GB':'?')+' - '+sku+' - '+(i===0?'OS Disk':'Data LUN '+d.lun)])
-      ]));
-    });
-    right.appendChild(tc);right.appendChild(dc);
-    g.appendChild(right);
-    content.appendChild(g);
-  }
-
-  body.appendChild(content);
-  wrap.appendChild(hdr);wrap.appendChild(body);
-  return wrap;
-}
-
-// ── Boot ──────────────────────────────────────────────────────
-handleCB();draw();
-
-// expose token paste for fallback
-window._pasteToken = function(tok) {
-  if(!tok||!tok.trim()){alert('Please enter a token');return;}
-  S.token = tok.trim();
-  azGet(MGMT+'/subscriptions?api-version=2022-12-01').then(function(s){
-    set({subs:s.value||[],phase:'browse',busy:false,err:null});
-  }).catch(function(e){set({err:e.message,busy:false});});
 };
+
+// ═══════════════════════════════════════════════════════════
+// RECOMMENDATIONS ENGINE
+// ═══════════════════════════════════════════════════════════
+const buildReport = (m, detail) => {
+  const recs=[]; let score=100;
+
+  // CPU
+  if      (m.cpuAvg<5)               { score-=35; recs.push({sev:'critical',cat:'Cost/Right-Sizing',icon:'🔴',title:'Severely underutilized CPU',      detail:`Avg CPU only ${m.cpuAvg}% over 7 days. VM is essentially idle.`,              action:'Downsize or deallocate if workload is inactive.',          savings:'Up to 70–80% cost reduction'}); }
+  else if (m.cpuAvg<20&&m.cpuMax<60) { score-=20; recs.push({sev:'high',   cat:'Cost/Right-Sizing',icon:'🟠',title:'CPU over-provisioned',              detail:`Avg: ${m.cpuAvg}%, peak: ${m.cpuMax}%. Sustained low utilization.`,         action:'Consider halving vCPU count.',                             savings:'30–50% cost reduction'}); }
+  else if (m.cpuAvg>85||m.cpuMax>95) { score-=25; recs.push({sev:'critical',cat:'Performance',     icon:'🔴',title:'CPU saturation detected',           detail:`Avg: ${m.cpuAvg}%, peak: ${m.cpuMax}%, p95: ${m.cpuP95}%.`,                action:'Scale up or enable Azure Autoscale.',                      savings:'N/A — performance required'}); }
+  else if (m.cpuAvg>70)              { score-=10; recs.push({sev:'medium', cat:'Performance',     icon:'🟡',title:'Elevated CPU utilization',           detail:`Avg ${m.cpuAvg}% — approaching saturation.`,                               action:'Plan scale-up or review sizing.',                          savings:'Preventive action'}); }
+
+  // Memory
+  if (m.memPct!==null) {
+    if      (m.memPct>85) { score-=20; recs.push({sev:'critical',cat:'Memory',icon:'🔴',title:'High memory pressure',    detail:`Memory usage ${m.memPct}%. Risk of OOM events.`,  action:'Upgrade to memory-optimized E-series SKU.', savings:'N/A — upgrade required'}); }
+    else if (m.memPct<20) { score-=10; recs.push({sev:'medium', cat:'Memory',icon:'🟡',title:'Low memory utilization',   detail:`Only ${m.memPct}% memory used.`,                   action:'Move to burstable or compute SKU with less RAM.', savings:'15–30% cost reduction'}); }
+  }
+
+  // Disk
+  if (m.avgROps<1&&m.avgWOps<1&&m.avgDiskR<0.1&&m.avgDiskW<0.1) {
+    score-=5; recs.push({sev:'low',cat:'Storage',icon:'🔵',title:'Negligible OS disk I/O',detail:`Read: ${m.avgDiskR} MB/s, Write: ${m.avgDiskW} MB/s.`,action:'Downgrade from Premium SSD to Standard SSD.',savings:'$15–30/month on disk tier'});
+  } else if (m.maxROps>5000||m.maxWOps>5000) {
+    score-=10; recs.push({sev:'medium',cat:'Storage',icon:'🟡',title:'Peak IOPS are high',detail:`Peak Read: ${m.maxROps}, Write: ${m.maxWOps} IOPS.`,action:'Ensure Premium SSD or Ultra Disk is configured.',savings:'Performance improvement'});
+  }
+  if (m.avgDdROps<5&&m.avgDdWOps<5&&(m.avgDdR>0||m.avgDdW>0)) {
+    recs.push({sev:'low',cat:'Storage',icon:'🔵',title:'Data disk low IOPS',detail:`Read: ${m.avgDdROps} IOPS, Write: ${m.avgDdWOps} IOPS.`,action:'Move cold data to Standard HDD/SSD.',savings:'Up to 60% disk cost reduction'});
+  }
+
+  // Right-sizing
+  const rs = rightSize(m);
+  if (rs&&rs.size!==m.vmSize) {
+    const cur=m.si.cost, nc=VM_CATALOG[rs.size]?.cost||cur;
+    if (nc<cur) {
+      const sp=Math.round((cur-nc)/cur*100), sm=Math.round((cur-nc)*730);
+      recs.push({sev:'high',cat:'Right-Sizing',icon:'🟠',
+        title:`Recommended SKU: ${rs.size}`,
+        detail:`${m.vmSize} (${m.si.vcpu}vCPU/${m.si.ram}GB) → ${rs.size} (${VM_CATALOG[rs.size].vcpu}vCPU/${VM_CATALOG[rs.size].ram}GB). ${rs.reason}`,
+        action:'Resize via Azure Portal → VM → Size, or: az vm resize.',
+        savings:`~${sp}% cost reduction (~$${sm}/month)`});
+    }
+  }
+
+  // Cost & governance
+  recs.push({sev:'info',cat:'Cost',          icon:'🟣',title:'Consider Reserved Instances',         detail:`1- or 3-year reservations on ${m.vmSize} unlock major discounts vs pay-as-you-go.`,action:'Purchase via Azure Portal → Reservations.',savings:'Up to 40–72% vs PAYG'});
+  recs.push({sev:'info',cat:'Cost Governance',icon:'🟣',title:'Enable auto-shutdown for non-prod VMs',detail:'Scheduling shutdown outside business hours eliminates idle costs.',               action:'Azure Portal → VM → Auto-shutdown.',       savings:'Up to 60% for dev/test workloads'});
+
+  const tags=detail.tags||{}, missing=['Environment','Owner','CostCenter','Application'].filter(t=>!tags[t]);
+  if (missing.length) { score-=5; recs.push({sev:'low',cat:'Governance',icon:'🔵',title:`Missing tags: ${missing.join(', ')}`,detail:'Untagged resources make cost attribution and chargeback difficult.',action:'Add standard tags for cost reporting.',savings:'Improved governance'}); }
+
+  recs.push({sev:'info',cat:'Tooling',icon:'🟣',title:'Enable Azure Advisor',detail:'Continuously surfaces right-sizing, security and reliability recommendations.',action:'Navigate to Azure Advisor in the Azure Portal.',savings:'Ongoing optimization'});
+
+  return {score:Math.max(0,Math.round(score)), recs, monthlyCost:r2(m.si.cost*730), rs};
+};
+
+const rightSize = m => {
+  let tc=m.si.vcpu, tr=m.si.ram;
+  if (m.cpuAvg<10) tc=Math.max(1,Math.floor(m.si.vcpu/2)); else if (m.cpuAvg>80) tc=m.si.vcpu*2;
+  if (m.memPct!==null) { if(m.memPct<20) tr=Math.max(1,Math.floor(m.si.ram/2)); else if(m.memPct>85) tr=m.si.ram*2; }
+  let best=null, bd=Infinity;
+  for (const [sz,info] of Object.entries(VM_CATALOG)) {
+    if (info.vcpu>=tc&&info.ram>=tr) { const d=(info.vcpu-tc)*2+(info.ram-tr); if(d<bd){bd=d;best=sz;} }
+  }
+  return best ? {size:best,reason:`Target: ${tc} vCPU / ${tr} GB RAM from 7-day utilization.`} : null;
+};
+
+// ═══════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════
+const render = () => {
+  const app=$('app'); app.innerHTML='';
+  if      (S.phase==='connect')                      app.appendChild(renderConnect());
+  else if (S.phase==='browse')                       app.appendChild(renderBrowse());
+  else if (S.phase==='analyze'&&S.report&&S.metrics) app.appendChild(renderAnalyze());
+  else app.appendChild(el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280'}},['🔄 Loading...']));
+};
+
+// ═══════════════════════════════════════════════════════════
+// CONNECT SCREEN
+// ═══════════════════════════════════════════════════════════
+const renderConnect = () => {
+  const wrap=el('div',{style:{minHeight:'100vh',background:'linear-gradient(145deg,#0f172a 0%,#1e3a8a 60%,#1d4ed8 100%)',
+    display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}});
+  const inner=el('div',{style:{width:'100%',maxWidth:'520px'}});
+  inner.append(el('div',{style:{textAlign:'center',marginBottom:'28px',color:'white'}},
+    [el('div',{style:{fontSize:'52px',marginBottom:'8px'}},['☁️']),
+     el('h1',{style:{fontSize:'26px',fontWeight:'900',color:'white',marginBottom:'6px'}},['Azure VM Optimizer']),
+     el('p',{style:{color:'#93c5fd',fontSize:'13px'}},['Sign in with your Azure user identity — no service principals needed'])]));
+
+  const c=card([],{padding:'24px'});
+
+  // Method picker
+  if (!S.authMethod) {
+    c.append(
+      el('h2',{style:{fontSize:'15px',fontWeight:'800',color:'#111827',marginBottom:'6px'}},['👤 Choose sign-in method']),
+      el('p',{style:{fontSize:'13px',color:'#6b7280',marginBottom:'20px'}},['All methods use your own Azure user account.']),
+      ...[
+        {id:'token', icon:'📋',label:'Paste Bearer Token',        desc:'Run az account get-access-token in your terminal and paste. No app registration needed. Quickest method.'},
+        {id:'device',icon:'📱',label:'Device Code Flow',          desc:'Get a code, visit aka.ms/devicelogin and sign in. Requires App Registration with public client flow.'},
+        {id:'pkce',  icon:'🌐',label:'Browser Login (OAuth PKCE)',desc:'Interactive Microsoft login redirect. Requires App Registration with SPA redirect URI = http://localhost:8080.'},
+      ].map(m=>{
+        const b=el('button',{className:'method-card'},
+          [el('div',{style:{fontWeight:'700',fontSize:'14px',color:'#111827',marginBottom:'3px'}},[m.icon+' '+m.label]),
+           el('div',{style:{fontSize:'12px',color:'#6b7280'}},[m.desc])]);
+        b.addEventListener('click',()=>setState({authMethod:m.id,err:null}));
+        return b;
+      })
+    );
+  }
+
+  // ── Bearer Token ──
+  else if (S.authMethod==='token') {
+    const back=el('button',{style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#6b7280',marginRight:'10px'}},['←']);
+    back.addEventListener('click',()=>setState({authMethod:null,err:null}));
+    c.append(
+      el('div',{style:{display:'flex',alignItems:'center',marginBottom:'16px'}},[back,
+        el('h2',{style:{fontSize:'15px',fontWeight:'800',color:'#111827'}},['📋 Paste Bearer Token'])]),
+      el('div',{style:{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',padding:'10px 13px',marginBottom:'16px',fontSize:'12px',color:'#0369a1'}},
+        [el('strong',{},'Run in PowerShell / Terminal:'),el('br'),
+         el('code',{style:{display:'block',marginTop:'4px',background:'#e0f2fe',padding:'5px 8px',borderRadius:'5px',wordBreak:'break-all',fontFamily:'monospace',fontSize:'11px'}},
+           ['az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv'])]),
+    );
+    const ta=el('textarea',{rows:'4',placeholder:'eyJ0eXAiOiJKV1QiLCJhbGciOi...',
+      style:{width:'100%',padding:'9px 13px',border:'1.5px solid #d1d5db',borderRadius:'8px',
+        fontSize:'12px',fontFamily:'monospace',resize:'vertical',marginBottom:'14px'}});
+    ta.value=S.pastedToken||'';
+    ta.addEventListener('input',e=>{ S.pastedToken=e.target.value; });
+    const eb=errBox(S.err);
+    c.append(ta);
+    if (eb) c.append(eb);
+    c.append(mkBtn(S.busy?'🔄 Connecting...':'🔗 Connect to Azure',connectWithToken,{disabled:S.busy,full:true}));
+  }
+
+  // ── Device Code form ──
+  else if (S.authMethod==='device'&&!S.deviceCode) {
+    const back=el('button',{style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#6b7280',marginRight:'10px'}},['←']);
+    back.addEventListener('click',()=>setState({authMethod:null,err:null}));
+    c.append(
+      el('div',{style:{display:'flex',alignItems:'center',marginBottom:'16px'}},[back,
+        el('h2',{style:{fontSize:'15px',fontWeight:'800',color:'#111827'}},['📱 Device Code Flow'])]),
+      infoBox('Requires Entra ID App Registration with public client flow enabled + Azure Service Management → user_impersonation permission.'),
+    );
+    const mkField=(lbl,val,cb)=>{
+      const w=el('div',{style:{marginBottom:'14px'}});
+      w.append(el('label',{style:{display:'block',fontSize:'12px',fontWeight:'700',color:'#374151',marginBottom:'5px'}},[lbl]));
+      const i=el('input',{type:'text',value:val,placeholder:'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+        style:{width:'100%',padding:'9px 13px',border:'1.5px solid #d1d5db',borderRadius:'8px',fontSize:'13px',fontFamily:'monospace'}});
+      i.addEventListener('input',e=>cb(e.target.value)); w.append(i); return w;
+    };
+    const eb=errBox(S.err);
+    c.append(mkField('Tenant ID',S.tenantId,v=>S.tenantId=v),mkField('App (Client) ID',S.clientId,v=>S.clientId=v));
+    if (eb) c.append(eb);
+    c.append(mkBtn(S.busy?'🔄 Requesting...':'📲 Get Device Code',startDeviceFlow,{disabled:S.busy,full:true}));
+  }
+
+  // ── Device Code waiting ──
+  else if (S.authMethod==='device'&&S.deviceCode) {
+    const dc=S.deviceCode;
+    c.append(el('div',{style:{textAlign:'center',padding:'10px 0'}},
+      [el('div',{style:{fontSize:'36px',marginBottom:'12px'}},['📱']),
+       el('h3',{style:{fontSize:'16px',fontWeight:'800',color:'#111827',marginBottom:'8px'}},['Sign in to Azure']),
+       el('p',{style:{fontSize:'13px',color:'#6b7280',marginBottom:'20px'}},['Open the link below and enter the code:']),
+       el('a',{href:dc.verification_uri,target:'_blank',style:{display:'block',fontSize:'14px',fontWeight:'700',color:'#2563eb',marginBottom:'16px'}},[dc.verification_uri]),
+       el('div',{style:{background:'#f0fdf4',border:'2px solid #86efac',borderRadius:'12px',padding:'16px 24px',marginBottom:'20px',display:'inline-block'}},
+         [el('div',{style:{fontSize:'12px',color:'#6b7280',marginBottom:'4px'}},['Enter this code']),
+          el('div',{style:{fontSize:'36px',fontWeight:'900',letterSpacing:'8px',color:'#15803d',fontFamily:'monospace'}},[dc.user_code])]),
+       el('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',color:'#6b7280',fontSize:'13px',marginBottom:'16px'}},
+         [el('span',{className:'pulse',style:{display:'inline-block',width:'10px',height:'10px',borderRadius:'50%',background:'#22c55e'}}),'Waiting for sign-in...']),
+       mkBtn('Cancel',cancelDevice,{variant:'secondary',sm:true})]));
+  }
+
+  // ── PKCE ──
+  else if (S.authMethod==='pkce') {
+    const back=el('button',{style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#6b7280',marginRight:'10px'}},['←']);
+    back.addEventListener('click',()=>setState({authMethod:null,err:null}));
+    c.append(
+      el('div',{style:{display:'flex',alignItems:'center',marginBottom:'16px'}},[back,
+        el('h2',{style:{fontSize:'15px',fontWeight:'800',color:'#111827'}},['🌐 Browser Login (PKCE)'])]),
+      infoBox('App Registration needs Redirect URI = http://localhost:8080 (SPA type) + Azure Service Management user_impersonation permission.'),
+    );
+    const mkField=(lbl,val,cb)=>{
+      const w=el('div',{style:{marginBottom:'14px'}});
+      w.append(el('label',{style:{display:'block',fontSize:'12px',fontWeight:'700',color:'#374151',marginBottom:'5px'}},[lbl]));
+      const i=el('input',{type:'text',value:val,placeholder:'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+        style:{width:'100%',padding:'9px 13px',border:'1.5px solid #d1d5db',borderRadius:'8px',fontSize:'13px',fontFamily:'monospace'}});
+      i.addEventListener('input',e=>cb(e.target.value)); w.append(i); return w;
+    };
+    const eb=errBox(S.err);
+    c.append(mkField('Tenant ID',S.tenantId,v=>S.tenantId=v),mkField('App (Client) ID',S.clientId,v=>S.clientId=v));
+    if (eb) c.append(eb);
+    c.append(
+      mkBtn(S.busy?'🔄 Redirecting...':'🔐 Sign in with Microsoft',startPKCE,{disabled:S.busy||!S.tenantId||!S.clientId,full:true}),
+      el('p',{style:{fontSize:'11px',color:'#9ca3af',marginTop:'10px',textAlign:'center'}},['You will be redirected to Microsoft login and back.'])
+    );
+  }
+
+  inner.append(c); wrap.append(inner);
+  return wrap;
+};
+
+// ═══════════════════════════════════════════════════════════
+// BROWSE SCREEN
+// ═══════════════════════════════════════════════════════════
+const renderBrowse = () => {
+  const wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
+
+  const hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
+  const soBtn=mkBtn('Sign out',()=>setState({token:null,phase:'connect',authMethod:null,subs:[],selSub:null,rgs:[],vms:[],selRG:null}),{variant:'secondary',sm:true});
+  soBtn.style.marginLeft='auto';
+  hdr.append(
+    el('span',{style:{fontSize:'22px'}},['☁️']),
+    el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},['Azure VM Optimizer']),
+    el('span',{style:{background:'#dcfce7',color:'#15803d',fontSize:'11px',fontWeight:'700',padding:'2px 10px',borderRadius:'99px'}},['👤 Signed in']),
+    S.busy?el('span',{style:{color:'#6b7280',fontSize:'12px'}},['🔄 Loading...']):null,
+    soBtn
+  );
+
+  const body=el('div',{style:{maxWidth:'1000px',margin:'0 auto',padding:'24px'}});
+  const eb=errBox(S.err); if(eb) body.append(eb);
+
+  // Sub + RG grid
+  const grid=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'}});
+
+  const subList=el('div',{style:{display:'flex',flexDirection:'column',gap:'8px',maxHeight:'340px',overflowY:'auto'}});
+  S.subs.forEach(s=>{
+    const active=S.selSub?.subscriptionId===s.subscriptionId;
+    const b=el('button',{style:{textAlign:'left',padding:'10px 13px',borderRadius:'8px',border:'1.5px solid',
+      borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px'}},
+      [el('div',{style:{fontWeight:'700',color:'#111827'}},[s.displayName]),
+       el('div',{style:{color:'#9ca3af',fontSize:'11px',fontFamily:'monospace',marginTop:'2px'}},[s.subscriptionId])]);
+    b.addEventListener('click',()=>pickSub(s));
+    subList.append(b);
+  });
+  grid.append(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'12px'}},['📋 Subscription']),subList]));
+
+  if (S.selSub) {
+    const rgList=el('div',{style:{display:'flex',flexDirection:'column',gap:'7px',maxHeight:'340px',overflowY:'auto'}});
+    S.rgs.forEach(rg=>{
+      const active=S.selRG===rg.name;
+      const b=el('button',{style:{textAlign:'left',padding:'9px 13px',borderRadius:'8px',border:'1.5px solid',
+        borderColor:active?'#2563eb':'#e5e7eb',background:active?'#eff6ff':'white',cursor:'pointer',fontSize:'13px',fontWeight:'600',color:'#111827'}},
+        ['📁 '+rg.name,el('span',{style:{color:'#9ca3af',fontWeight:'400',fontSize:'11px',marginLeft:'6px'}},[rg.location])]);
+      b.addEventListener('click',()=>pickRG(rg.name));
+      rgList.append(b);
+    });
+    grid.append(card([el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'12px'}},['📁 Resource Group']),rgList]));
+  }
+  body.append(grid);
+
+  // Show all VMs button
+  if (S.selSub) {
+    const allBtn=mkBtn('🔍 Show ALL VMs in subscription',showAllVMs,{variant:'secondary',sm:true});
+    body.append(el('div',{style:{marginBottom:'16px'}},[allBtn]));
+  }
+
+  // VM cards
+  if (S.vms.length>0) {
+    const vmGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}});
+    S.vms.forEach(vm=>{
+      const sz=vm.properties?.hardwareProfile?.vmSize||'';
+      const info=VM_CATALOG[sz];
+      const vmos=vm.properties?.storageProfile?.osDisk?.osType||'Linux';
+      const parts=vm.id.split('/'), rgIdx=parts.findIndex(p=>p.toLowerCase()==='resourcegroups');
+      const vmRG=rgIdx>=0?parts[rgIdx+1]:'';
+      const aBtn=mkBtn(S.busy?'⏳ Analyzing...':'🔍 Analyze & Optimize',()=>analyzeVM(vm),{sm:true,disabled:S.busy});
+      vmGrid.append(el('div',{style:{border:'1.5px solid #e5e7eb',borderRadius:'10px',padding:'16px',background:'white'}},
+        [el('div',{style:{fontWeight:'700',fontSize:'14px',color:'#111827',marginBottom:'3px'}},[(vmos==='Windows'?'🪟':'🐧')+' '+vm.name]),
+         el('div',{style:{fontSize:'11px',color:'#9ca3af',marginBottom:'6px'}},[vm.location+(vmRG?' · 📁 '+vmRG:'')]),
+         el('div',{style:{fontSize:'12px',color:'#374151',marginBottom:'12px'}},
+           [el('strong',{},[sz]),info?el('span',{style:{color:'#6b7280'}},[` · ${info.vcpu} vCPU · ${info.ram} GB · ~$${r2(info.cost*730)}/mo`]):null].filter(Boolean)),
+         aBtn]));
+    });
+    body.append(card([
+      el('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#374151',marginBottom:'14px'}},
+        ['🖥️ Virtual Machines — ',el('span',{style:{color:'#2563eb'}},[S.selRG||''])]),
+      vmGrid
+    ]));
+  } else if (S.selSub&&!S.busy&&!S.err) {
+    body.append(card([el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['Select a resource group or click "Show ALL VMs in subscription".'])]));
+  }
+
+  wrap.append(hdr,body);
+  return wrap;
+};
+
+// ═══════════════════════════════════════════════════════════
+// ANALYZE SCREEN
+// ═══════════════════════════════════════════════════════════
+const renderAnalyze = () => {
+  const m=S.metrics, rep=S.report, vd=S.vmDetail;
+  const tags=vd?.tags||{};
+  const os=vd?.properties?.storageProfile?.osDisk?.osType||'Linux';
+  const pw=vd?.properties?.instanceView?.statuses?.find(s=>s.code?.startsWith('PowerState/'))?.displayStatus||'Unknown';
+  const disks=[vd?.properties?.storageProfile?.osDisk,...(vd?.properties?.storageProfile?.dataDisks||[])].filter(Boolean);
+  const TABS=['overview','cpu','disk','network','recommendations','details'];
+
+  const wrap=el('div',{style:{minHeight:'100vh',background:'#f8fafc'}});
+
+  // Header
+  const hdr=el('div',{style:{background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}});
+  const pwBadge=el('span',{style:{marginLeft:'auto',background:pw.includes('running')?'#dcfce7':'#fef3c7',
+    color:pw.includes('running')?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'}},['⚡ '+pw]);
+  hdr.append(
+    mkBtn('← Back',()=>setState({phase:'browse'}),{variant:'secondary',sm:true}),
+    el('span',{style:{fontSize:'20px'}},['☁️']),
+    el('span',{style:{fontWeight:'800',fontSize:'15px',color:'#111827'}},[(os==='Windows'?'🪟':'🐧')+' '+S.selVM?.name]),
+    el('span',{style:{color:'#6b7280',fontSize:'12px'}},[m.vmSize+' · '+S.selVM?.location]),
+    pwBadge
+  );
+
+  const body=el('div',{style:{maxWidth:'1120px',margin:'0 auto',padding:'24px'}});
+
+  // Score banner
+  const banner=el('div',{style:{display:'grid',gridTemplateColumns:'180px 1fr',gap:'16px',marginBottom:'20px'}});
+  banner.append(
+    card([
+      el('div',{style:{fontSize:'11px',fontWeight:'700',color:'#6b7280',marginBottom:'8px'}},['OPTIMIZATION SCORE']),
+      el('div',{style:{fontSize:'68px',fontWeight:'900',color:scoreColor(rep.score),lineHeight:'1'}},[String(rep.score)]),
+      el('div',{style:{fontSize:'12px',color:scoreColor(rep.score),marginTop:'6px',fontWeight:'700'}},
+        [rep.score>=80?'✅ Well Optimized':rep.score>=60?'⚠️ Needs Attention':'🔴 Needs Work']),
+      el('div',{style:{marginTop:'10px',fontSize:'12px',color:'#374151'}},
+        [el('strong',{},[`~$${rep.monthlyCost}/month`]),el('br'),el('span',{style:{color:'#9ca3af'}},['est. pay-as-you-go'])])
+    ],{textAlign:'center',background:scoreBg(rep.score)}),
+  );
+  const chips=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'7px',marginBottom:'8px'}});
+  rep.recs.forEach(r=>{ const s=SEV[r.sev]; chips.append(el('span',{style:{background:s.bg,color:s.text,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'99px',border:`1px solid ${s.border}`}},[r.icon+' '+r.title])); });
+  const sc2=card([el('div',{style:{fontSize:'13px',fontWeight:'700',color:'#111827',marginBottom:'10px'}},[`💡 ${rep.recs.length} Recommendations · 7-day analysis`]),chips]);
+  if (rep.rs&&rep.rs.size!==m.vmSize) sc2.append(el('div',{style:{marginTop:'8px',padding:'9px 12px',background:'#f0fdf4',borderRadius:'8px',fontSize:'12px',color:'#15803d',fontWeight:'600'}},['🎯 Right-size to ',el('strong',{},[rep.rs.size]),' — '+rep.rs.reason]));
+  banner.append(sc2);
+  body.append(banner);
+
+  // Tab bar
+  const tabBar=el('div',{style:{display:'flex',gap:'3px',marginBottom:'20px',background:'white',borderRadius:'10px',padding:'5px',border:'1px solid #e5e7eb',width:'fit-content'}});
+  TABS.forEach(t=>{
+    const b=el('button',{className:'tab-btn'+(S.tab===t?' active':'')},[t.charAt(0).toUpperCase()+t.slice(1)]);
+    b.addEventListener('click',()=>setState({tab:t}));
+    tabBar.append(b);
+  });
+  body.append(tabBar);
+
+  const content=el('div');
+
+  // ── Overview ──
+  if (S.tab==='overview') {
+    const g1=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
+    g1.append(
+      statCard('Avg CPU',   m.cpuAvg,'%',`Max ${m.cpuMax}% · p95 ${m.cpuP95}%`,m.cpuAvg>80?'#dc2626':m.cpuAvg<10?'#d97706':'#2563eb',m.cpuAvg>85||m.cpuAvg<5),
+      statCard('Memory',    m.memPct??'N/A',m.memPct?'%':'',m.memPct?'Avg 7 days':'Linux/unavailable',!m.memPct?'#9ca3af':m.memPct>85?'#dc2626':'#2563eb',m.memPct>85),
+      statCard('Disk Read', m.avgDiskR,'MB/s',`${m.avgROps} avg IOPS`,'#7c3aed'),
+      statCard('Disk Write',m.avgDiskW,'MB/s',`${m.avgWOps} avg IOPS`,'#7c3aed'),
+    );
+    const g2=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'12px',marginBottom:'12px'}});
+    g2.append(
+      statCard('Data Disk R',m.avgDdR,'MB/s',`${m.avgDdROps} IOPS`,'#0891b2'),
+      statCard('Data Disk W',m.avgDdW,'MB/s',`${m.avgDdWOps} IOPS`,'#0891b2'),
+      statCard('Net In (7d)',m.totIn,'GB','','#059669'),
+      statCard('Net Out (7d)',m.totOut,'GB','','#059669'),
+    );
+    content.append(g1,g2,card([
+      el('div',{style:{fontWeight:'700',fontSize:'13px',color:'#374151',marginBottom:'14px'}},['📈 CPU Utilization — Daily Trend (7 days)']),
+      cpuTable(m.chartData)
+    ]));
+  }
+
+  // ── CPU ──
+  else if (S.tab==='cpu') {
+    content.append(el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}},
+      [card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['📊 CPU Statistics (7-day)']),
+         barTable([{name:'Average',v:m.cpuAvg+'%'},{name:'Maximum',v:m.cpuMax+'%'},{name:'p95',v:m.cpuP95+'%'},{name:'Minimum',v:m.cpuMin+'%'}])]),
+       card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['📈 Daily Trend']),cpuTable(m.chartData)])]));
+  }
+
+  // ── Disk ──
+  else if (S.tab==='disk') {
+    content.append(el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}},
+      [card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['💾 OS Disk Throughput & IOPS']),
+         barTable([{name:'Read MB/s',v:m.avgDiskR},{name:'Write MB/s',v:m.avgDiskW},
+                   {name:'Read IOPS avg',v:m.avgROps},{name:'Write IOPS avg',v:m.avgWOps},
+                   {name:'Read IOPS peak',v:m.maxROps},{name:'Write IOPS peak',v:m.maxWOps}])]),
+       card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['📀 Data Disk I/O']),
+         barTable([{name:'Read MB/s',v:m.avgDdR},{name:'Write MB/s',v:m.avgDdW},
+                   {name:'Read IOPS',v:m.avgDdROps},{name:'Write IOPS',v:m.avgDdWOps}])]),
+       card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['🗂️ Attached Disks']),
+         ...disks.map((d,i)=>el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
+           [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
+            el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},
+              [(d.diskSizeGB?d.diskSizeGB+' GB · ':'')+
+               (d.managedDisk?.storageAccountType||'Unmanaged')+' · '+
+               (i===0?'OS Disk':'Data Disk LUN '+d.lun)])]))])]));
+  }
+
+  // ── Network ──
+  else if (S.tab==='network') {
+    content.append(el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}},
+      [card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['🌐 7-Day Network Totals']),
+         barTable([{name:'Inbound GB',v:m.totIn},{name:'Outbound GB',v:m.totOut}])]),
+       card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['📡 Network Summary']),
+         ...[['Total Inbound (7d)',m.totIn+' GB'],['Total Outbound (7d)',m.totOut+' GB'],
+             ['Ratio In:Out',m.totOut>0?'1 : '+r2(m.totOut/Math.max(m.totIn,0.01)):'N/A'],
+             ['Est. egress cost','~$'+r2(m.totOut*0.087)+' (West Europe)']].map(([k,v])=>rowEl(k,v)),
+         el('div',{style:{marginTop:'10px',fontSize:'11px',color:'#9ca3af'}},['* Egress estimate at $0.087/GB. Actual pricing varies by region.'])])]));
+  }
+
+  // ── Recommendations ──
+  else if (S.tab==='recommendations') {
+    const list=el('div',{style:{display:'flex',flexDirection:'column',gap:'13px'}});
+    rep.recs.forEach(r=>{
+      const s=SEV[r.sev];
+      list.append(el('div',{style:{background:s.bg,borderRadius:'12px',border:`1px solid ${s.border}`,padding:'18px',borderLeft:`5px solid ${s.text}`}},
+        [el('div',{style:{display:'flex',gap:'13px',alignItems:'flex-start'}},
+          [el('span',{style:{background:s.text,color:'white',fontSize:'10px',fontWeight:'800',padding:'3px 8px',borderRadius:'99px',whiteSpace:'nowrap',marginTop:'2px',flexShrink:'0'}},[s.label]),
+           el('div',{style:{flex:'1'}},
+             [el('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'5px'}},
+               [el('span',{style:{fontWeight:'800',fontSize:'14px',color:'#111827'}},[r.icon+' '+r.title]),
+                el('span',{style:{background:'#f3f4f6',color:'#374151',fontSize:'11px',fontWeight:'600',padding:'2px 7px',borderRadius:'99px'}},[r.cat])]),
+              el('p',{style:{margin:'0 0 7px',fontSize:'13px',color:'#4b5563',lineHeight:'1.5'}},[r.detail]),
+              el('div',{style:{fontSize:'13px',color:'#374151'}},[el('strong',{},'🎯 Action: '),r.action]),
+              r.savings?el('div',{style:{marginTop:'5px',fontSize:'13px',color:'#059669',fontWeight:'700'}},['💰 '+r.savings]):null
+             ].filter(Boolean))])]));
+    });
+    content.append(list);
+  }
+
+  // ── Details ──
+  else if (S.tab==='details') {
+    content.append(el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}},
+      [card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'14px'}},['🖥️ VM Configuration']),
+         ...[['Name',vd?.name],['Resource Group',S.selRG],['Location',vd?.location],
+             ['VM Size',m.vmSize],['vCPU / RAM',`${m.si.vcpu} vCPU / ${m.si.ram} GB`],
+             ['OS Type',os],['OS Disk SKU',vd?.properties?.storageProfile?.osDisk?.managedDisk?.storageAccountType||'—'],
+             ['Image Offer',vd?.properties?.storageProfile?.imageReference?.offer||'Custom'],
+             ['Power State',pw],['Provisioning',vd?.properties?.provisioningState],
+             ['Est. Monthly Cost',`~$${rep.monthlyCost}`]].map(([k,v])=>rowEl(k,String(v||'—')))]),
+       el('div',{style:{display:'flex',flexDirection:'column',gap:'16px'}},
+         [card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['🏷️ Tags']),
+            Object.keys(tags).length===0
+              ?el('div',{style:{color:'#9ca3af',fontSize:'13px'}},['⚠️ No tags found on this VM.'])
+              :el('div',{},[...Object.entries(tags).map(([k,v])=>rowEl(k,v))])]),
+          card([el('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'12px'}},['📦 Attached Disks']),
+            ...disks.map((d,i)=>el('div',{style:{background:'#f8fafc',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
+              [el('div',{style:{fontWeight:'700',fontSize:'13px'}},[d.name||'(unnamed)']),
+               el('div',{style:{color:'#6b7280',fontSize:'12px',marginTop:'2px'}},
+                 [(d.diskSizeGB?d.diskSizeGB+' GB':'?')+' · '+
+                  (d.managedDisk?.storageAccountType||'Unmanaged')+' · '+
+                  (i===0?'OS Disk':'Data Disk LUN '+d.lun)])]))])])]));
+  }
+
+  body.append(content);
+  wrap.append(hdr,body);
+  return wrap;
+};
+
+// ═══════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════
+handlePKCECallback().then(()=>render());
 </script>
 </body>
 </html>
