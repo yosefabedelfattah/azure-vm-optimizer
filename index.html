@@ -467,10 +467,37 @@ function drawAuth(){
     msb.addEventListener('click',startLogin);
     c.appendChild(msb);
     c.appendChild(div({textAlign:'center',fontSize:'12px',color:'#9ca3af',marginBottom:'16px'},['Supports MFA - Full Microsoft login experience']));
-    c.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'12px',fontSize:'12px',color:'#6b7280',lineHeight:'1.6'},[
+    c.appendChild(div({background:'#f8fafc',borderRadius:'8px',padding:'12px',fontSize:'12px',color:'#6b7280',lineHeight:'1.6',marginBottom:'16px'},[
       h('strong',{style:{color:'#374151'}},['First time setup: ']),
       'Create an App Registration in Entra ID. Set this page URL as the SPA Redirect URI and grant Azure Service Management user_impersonation permission.'
     ]));
+
+    // divider
+    c.appendChild(div({display:'flex',alignItems:'center',gap:'8px',marginBottom:'16px'},[
+      div({flex:'1',height:'1px',background:'#e5e7eb'},[]),
+      h('span',{style:{fontSize:'12px',color:'#9ca3af'}},['or']),
+      div({flex:'1',height:'1px',background:'#e5e7eb'},[])
+    ]));
+
+    // Bearer Token section
+    c.appendChild(h('p',{style:{fontSize:'12px',fontWeight:'700',color:'#374151',marginBottom:'6px'}},['📋 Paste Bearer Token']));
+    c.appendChild(div({background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px',fontSize:'11px',color:'#0369a1',lineHeight:'1.6'}},[
+      h('strong',{},'Run in PowerShell:'),h('br'),
+      h('code',{style:{display:'block',marginTop:'4px',background:'#e0f2fe',padding:'4px 8px',borderRadius:'4px',wordBreak:'break-all',fontFamily:'monospace',fontSize:'10px'}},
+        ['az login']),
+      h('code',{style:{display:'block',marginTop:'4px',background:'#e0f2fe',padding:'4px 8px',borderRadius:'4px',wordBreak:'break-all',fontFamily:'monospace',fontSize:'10px'}},
+        ['az account set --subscription 596d8c38-b6e5-4528-835f-3d47e4862d08']),
+      h('code',{style:{display:'block',marginTop:'4px',background:'#e0f2fe',padding:'4px 8px',borderRadius:'4px',wordBreak:'break-all',fontFamily:'monospace',fontSize:'10px'}},
+        ['az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv'])
+    ]));
+    var ta=h('textarea',{rows:'3',placeholder:'Paste token here: eyJ0eXAiOiJKV1Qi...',
+      style:{width:'100%',boxSizing:'border-box',padding:'9px 12px',border:'1.5px solid #d1d5db',
+        borderRadius:'8px',fontSize:'12px',fontFamily:'monospace',resize:'vertical',marginBottom:'8px'}});
+    c.appendChild(ta);
+    var conBtn=btn('Connect with Token',function(){
+      window._pasteToken(ta.value);
+    },{full:true,variant:'secondary'});
+    c.appendChild(conBtn);
   }
   inner.appendChild(c);
   wrap.appendChild(inner);
@@ -782,6 +809,15 @@ function drawAnalyze(){
 
 // ── Boot ──────────────────────────────────────────────────────
 handleCB();draw();
+
+// expose token paste for fallback
+window._pasteToken = function(tok) {
+  if(!tok||!tok.trim()){alert('Please enter a token');return;}
+  S.token = tok.trim();
+  azGet(MGMT+'/subscriptions?api-version=2022-12-01').then(function(s){
+    set({subs:s.value||[],phase:'browse',busy:false,err:null});
+  }).catch(function(e){set({err:e.message,busy:false});});
+};
 </script>
 </body>
 </html>
