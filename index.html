@@ -27,7 +27,29 @@ var TENANT = 'YOUR_TENANT_ID';
 var CLIENT = 'YOUR_CLIENT_ID';
 // =============================================================
 
-var MGMT = 'https://management.azure.com';
+// Cloud endpoints — set dynamically based on user selection
+var CLOUDS = {
+  commercial: {
+    label:  'Azure Commercial',
+    mgmt:   'https://management.azure.com',
+    auth:   'https://login.microsoftonline.com',
+    scope:  'https://management.azure.com/user_impersonation offline_access',
+    badge:  '#2563eb',
+    badgeBg:'#eff6ff'
+  },
+  government: {
+    label:  'Azure Government (ITAR)',
+    mgmt:   'https://management.usgovcloudapi.net',
+    auth:   'https://login.microsoftonline.us',
+    scope:  'https://management.usgovcloudapi.net/user_impersonation offline_access',
+    badge:  '#b91c1c',
+    badgeBg:'#fef2f2'
+  }
+};
+
+var CLOUD = 'commercial'; // default
+function cloud(){ return CLOUDS[CLOUD]; }
+var MGMT = '';
 
 var CAT = {
   'Standard_B1s':{v:1,r:1,c:0.011},'Standard_B2ms':{v:2,r:8,c:0.083},
@@ -81,6 +103,9 @@ function azGet(url) {
   });
 }
 
+// azure mgmt url helper
+function mgmt(path){ return cloud().mgmt + path; }
+
 // PKCE
 function genV(){var a=new Uint8Array(32);crypto.getRandomValues(a);return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
 function genC(v){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)).then(function(h){return btoa(String.fromCharCode.apply(null,new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');});}
@@ -91,12 +116,13 @@ function startLogin(){
     var red=location.href.split('?')[0].split('#')[0];
     sessionStorage.setItem('pv',v);
     sessionStorage.setItem('pr',red);
+    sessionStorage.setItem('pc',CLOUD);
     var p=new URLSearchParams({
       client_id:CLIENT,response_type:'code',redirect_uri:red,
-      scope:'https://management.azure.com/user_impersonation offline_access',
+      scope:cloud().scope,
       code_challenge:ch,code_challenge_method:'S256',response_mode:'query'
     });
-    location.href='https://login.microsoftonline.com/'+TENANT+'/oauth2/v2.0/authorize?'+p;
+    location.href=cloud().auth+'/'+TENANT+'/oauth2/v2.0/authorize?'+p;
   });
 }
 
@@ -107,17 +133,19 @@ function handleCB(){
   if(!code)return;
   var v=sessionStorage.getItem('pv');
   var red=sessionStorage.getItem('pr');
-  sessionStorage.removeItem('pv');sessionStorage.removeItem('pr');
+  var savedCloud=sessionStorage.getItem('pc')||'commercial';
+  sessionStorage.removeItem('pv');sessionStorage.removeItem('pr');sessionStorage.removeItem('pc');
+  CLOUD=savedCloud;
   history.replaceState({},'',location.pathname);
   set({busy:true,phase:'auth'});
-  fetch('https://login.microsoftonline.com/'+TENANT+'/oauth2/v2.0/token',{
+  fetch(CLOUDS[savedCloud].auth+'/'+TENANT+'/oauth2/v2.0/token',{
     method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
     body:new URLSearchParams({client_id:CLIENT,code:code,redirect_uri:red,grant_type:'authorization_code',code_verifier:v})
   }).then(function(r){return r.json();}).then(function(d){
     if(!d.access_token){throw new Error(d.error_description||d.error||'Token exchange failed');}
     S.token=d.access_token;
-    return azGet(MGMT+'/subscriptions?api-version=2022-12-01');
+    return azGet(CLOUDS[savedCloud].mgmt+'/subscriptions?api-version=2022-12-01');
   }).then(function(s){
     set({subs:s.value||[],phase:'browse',busy:false,err:null});
   }).catch(function(e){set({err:e.message,phase:'auth',busy:false});});
@@ -148,7 +176,7 @@ function fetchMetrics(vmId){
     if(seen[key])return;
     chain=chain.then(function(){
       return azGet(
-        MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
+        mgmt(vmId)+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
         '&timespan='+ts+'&interval=PT1H' +
         '&metricnames='+encodeURIComponent(batch.join(',')) +
         '&aggregation=Average,Maximum,Minimum'
@@ -163,7 +191,7 @@ function fetchMetrics(vmId){
   });
   return chain.then(function(){
     return azGet(
-      MGMT+vmId+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
+      mgmt(vmId)+'/providers/Microsoft.Insights/metrics?api-version=2023-10-01' +
       '&timespan='+ts+'&interval=PT1H' +
       '&metricnames=Available%20Memory%20Bytes&aggregation=Average'
     ).then(function(r){return {all:all,mem:r.value&&r.value[0]||null};})
@@ -450,6 +478,36 @@ function drawAuth(){
     ]));
   } else {
     var eb=errBox(S.err);if(eb)c.appendChild(eb);
+
+    // ── Cloud environment selector ──
+    c.appendChild(h('p',{style:{fontSize:'12px',fontWeight:'700',color:'#374151',marginBottom:'8px'}},['Select Cloud Environment']));
+    var cloudSel=div({display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'20px'});
+    Object.keys(CLOUDS).forEach(function(key){
+      var cl=CLOUDS[key];
+      var active=CLOUD===key;
+      var tile=div({
+        padding:'10px 12px',borderRadius:'8px',cursor:'pointer',textAlign:'center',
+        border:'2px solid '+(active?cl.badge:'#e5e7eb'),
+        background:active?cl.badgeBg:'white',
+        transition:'all .15s'
+      },[
+        div({fontSize:'18px',marginBottom:'4px'},[key==='commercial'?'🌐':'🔒']),
+        div({fontSize:'12px',fontWeight:'700',color:active?cl.badge:'#374151'},[cl.label])
+      ]);
+      tile.addEventListener('click',function(){CLOUD=key;draw();});
+      cloudSel.appendChild(tile);
+    });
+    c.appendChild(cloudSel);
+
+    // active cloud badge
+    var activeCl=cloud();
+    c.appendChild(div({
+      background:activeCl.badgeBg,border:'1px solid '+activeCl.badge,
+      borderRadius:'8px',padding:'8px 12px',marginBottom:'16px',
+      fontSize:'11px',color:activeCl.badge,fontWeight:'600',textAlign:'center'
+    },['Connected to: '+activeCl.label+' ('+activeCl.mgmt+')']));
+
+
     // MS button
     var msb=h('button',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:'12px',
       width:'100%',padding:'13px 20px',background:'white',border:'1.5px solid #d1d5db',
@@ -544,7 +602,7 @@ function drawBrowse(){
     b.addEventListener('click',function(){
       go(function(){
         set({selSub:s,rgs:[],vms:[],selRG:null});
-        return azGet(MGMT+'/subscriptions/'+s.subscriptionId+'/resourcegroups?api-version=2023-07-01').then(function(r){set({rgs:r.value||[]});});
+        return azGet(mgmt('/subscriptions/'+s.subscriptionId+'/resourcegroups?api-version=2023-07-01')).then(function(r){set({rgs:r.value||[]});});
       });
     });
     subList.appendChild(b);
@@ -575,7 +633,7 @@ function drawBrowse(){
           });
           return chain.then(function(){
             if(found.length){set({vms:found});return;}
-            return azGet(MGMT+'/subscriptions/'+sid+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01').then(function(r){
+            return azGet(mgmt('/subscriptions/'+sid+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01')).then(function(r){
               var all=r.value||[];
               found=all.filter(function(v){
                 var p=v.id.split('/');
@@ -598,7 +656,7 @@ function drawBrowse(){
     var allBtn=btn('Show ALL VMs in subscription',function(){
       go(function(){
         set({selRG:'All VMs',vms:[]});
-        return azGet(MGMT+'/subscriptions/'+S.selSub.subscriptionId+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01').then(function(r){
+        return azGet(mgmt('/subscriptions/'+S.selSub.subscriptionId+'/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01')).then(function(r){
           var found=r.value||[];
           set({vms:found,err:found.length?null:'No VMs found.'});
         });
@@ -620,7 +678,7 @@ function drawBrowse(){
       var ab=btn(S.busy?'Analyzing...':'Analyze and Optimize',function(){
         go(function(){
           set({selVM:vm,report:null,metrics:null});
-          return azGet(MGMT+vm.id+'?api-version=2023-07-01&$expand=instanceView').then(function(detail){
+          return azGet(mgmt(vm.id+'?api-version=2023-07-01&$expand=instanceView')).then(function(detail){
             set({vmDetail:detail});
             return fetchMetrics(vm.id).then(function(res){
               var proc=procMetrics(res.all,res.mem,detail);
@@ -1043,7 +1101,7 @@ handleCB();draw();
 window._pasteToken = function(tok) {
   if(!tok||!tok.trim()){alert('Please enter a token');return;}
   S.token = tok.trim();
-  azGet(MGMT+'/subscriptions?api-version=2022-12-01').then(function(s){
+  azGet(mgmt('/subscriptions?api-version=2022-12-01')).then(function(s){
     set({subs:s.value||[],phase:'browse',busy:false,err:null});
   }).catch(function(e){set({err:e.message,busy:false});});
 };
