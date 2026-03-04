@@ -426,7 +426,8 @@ function cpuTbl(data){
 function draw(){
   var root=document.getElementById('root');
   root.innerHTML='';
-  if(S.phase==='auth')root.appendChild(drawAuth());
+  if(SHOW_README)root.appendChild(drawReadme());
+  else if(S.phase==='auth')root.appendChild(drawAuth());
   else if(S.phase==='browse')root.appendChild(drawBrowse());
   else if(S.phase==='analyze'&&S.report)root.appendChild(drawAnalyze());
   else root.appendChild(div({display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#6b7280'},['Loading...']));
@@ -471,6 +472,9 @@ function drawAuth(){
       h('strong',{style:{color:'#374151'}},['First time setup: ']),
       'Create an App Registration in Entra ID. Set this page URL as the SPA Redirect URI and grant Azure Service Management user_impersonation permission.'
     ]));
+    var authRmBtn = btn('📘 View README / Documentation', function(){SHOW_README=true;draw();},{variant:'ghost',full:true});
+    authRmBtn.style.marginTop='8px';
+    c.appendChild(authRmBtn);
 
     // divider
     c.appendChild(div({display:'flex',alignItems:'center',gap:'8px',marginBottom:'16px'},[
@@ -513,8 +517,10 @@ function drawBrowse(){
   hdr.appendChild(div({fontWeight:'800',fontSize:'15px',color:'#111827'},['☁ Azure VM Optimizer']));
   hdr.appendChild(div({background:'#dcfce7',color:'#15803d',fontSize:'11px',fontWeight:'700',padding:'2px 10px',borderRadius:'99px'},['Signed in']));
   if(S.busy)hdr.appendChild(div({color:'#6b7280',fontSize:'12px'},['Loading...']));
+  var rmBtn = btn('📘 README', function(){SHOW_README=true;draw();},{variant:'ghost',sm:true});
   var sob=btn('Sign out',function(){set({token:null,phase:'auth',subs:[],selSub:null,rgs:[],selRG:null,vms:[]});},{variant:'secondary',sm:true});
   sob.style.marginLeft='auto';
+  hdr.appendChild(rmBtn);
   hdr.appendChild(sob);
   var body=div({maxWidth:'960px',margin:'0 auto',padding:'24px'});
   var eb=errBox(S.err);if(eb)body.appendChild(eb);
@@ -660,7 +666,8 @@ function drawAnalyze(){
   hdr.appendChild(btn('Back',function(){set({phase:'browse'});},{variant:'secondary',sm:true}));
   hdr.appendChild(div({fontWeight:'800',fontSize:'15px',color:'#111827'},[(os==='Windows'?'[Win] ':'[Lin] ')+(S.selVM&&S.selVM.name||'')]));
   hdr.appendChild(div({fontSize:'12px',color:'#6b7280'},[m.vmSize+' - '+(S.selVM&&S.selVM.location||'')]));
-  var pwBadge=div({background:pw.indexOf('running')>=0?'#dcfce7':'#fef3c7',color:pw.indexOf('running')>=0?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'},[pw]);
+  var rmBtn2 = btn('📘 README', function(){SHOW_README=true;draw();},{variant:'ghost',sm:true});
+  hdr.appendChild(rmBtn2);  var pwBadge=div({background:pw.indexOf('running')>=0?'#dcfce7':'#fef3c7',color:pw.indexOf('running')>=0?'#15803d':'#92400e',fontSize:'11px',fontWeight:'700',padding:'3px 12px',borderRadius:'99px'},[pw]);
   pwBadge.style.marginLeft='auto';
   hdr.appendChild(pwBadge);
 
@@ -800,6 +807,231 @@ function drawAnalyze(){
   }
 
   body.appendChild(content);
+  wrap.appendChild(hdr);wrap.appendChild(body);
+  return wrap;
+}
+
+// ── README ────────────────────────────────────────────────────
+var SHOW_README = false;
+
+function drawReadme() {
+  var wrap = div({minHeight:'100vh',background:'#f8fafc'});
+
+  // header
+  var hdr = div({background:'white',borderBottom:'1px solid #e5e7eb',padding:'12px 24px',display:'flex',alignItems:'center',gap:'12px'});
+  hdr.appendChild(div({fontWeight:'800',fontSize:'15px',color:'#111827'},['☁ Azure VM Optimizer']));
+  var closeBtn = btn('Close README', function(){SHOW_README=false;draw();},{variant:'secondary',sm:true});
+  closeBtn.style.marginLeft='auto';
+  hdr.appendChild(closeBtn);
+
+  var body = div({maxWidth:'860px',margin:'0 auto',padding:'24px'});
+
+  function section(title, kids) {
+    var s = div({marginBottom:'28px'});
+    s.appendChild(h('h2',{style:{fontSize:'16px',fontWeight:'800',color:'#1e40af',marginBottom:'12px',paddingBottom:'6px',borderBottom:'2px solid #dbeafe'}},[title]));
+    kids.forEach(function(k){s.appendChild(k);});
+    return s;
+  }
+  function para(text) { return h('p',{style:{fontSize:'13px',color:'#374151',lineHeight:'1.8',marginBottom:'10px'}},[text]); }
+  function subhead(text) { return h('h3',{style:{fontSize:'13px',fontWeight:'700',color:'#111827',marginBottom:'6px',marginTop:'12px'}},[text]); }
+  function bullet(items) {
+    var ul = h('ul',{style:{paddingLeft:'20px',fontSize:'13px',color:'#374151',lineHeight:'1.8',marginBottom:'10px'}});
+    items.forEach(function(i){ul.appendChild(h('li',{},[i]));});
+    return ul;
+  }
+  function tableEl(headers, rows) {
+    var t = h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'13px',marginBottom:'16px'}});
+    var thead = h('thead');
+    var hr = h('tr');
+    headers.forEach(function(hd){
+      hr.appendChild(h('th',{style:{textAlign:'left',padding:'8px 12px',background:'#eff6ff',borderBottom:'2px solid #bfdbfe',fontWeight:'700',color:'#1e40af'}},[hd]));
+    });
+    thead.appendChild(hr);t.appendChild(thead);
+    var tbody = h('tbody');
+    rows.forEach(function(row,ri){
+      var tr = h('tr',{style:{background:ri%2===0?'white':'#f8fafc'}});
+      row.forEach(function(cell){tr.appendChild(h('td',{style:{padding:'8px 12px',borderBottom:'1px solid #e5e7eb',color:'#374151'}},[cell]));});
+      tbody.appendChild(tr);
+    });
+    t.appendChild(tbody);
+    return t;
+  }
+  function codeBlock(text) {
+    var pre = h('pre',{style:{background:'#1e293b',color:'#e2e8f0',padding:'12px 16px',borderRadius:'8px',fontSize:'12px',fontFamily:'monospace',overflowX:'auto',marginBottom:'12px',lineHeight:'1.6'}});
+    pre.appendChild(document.createTextNode(text));
+    return pre;
+  }
+  function infoBox2(text) {
+    return div({background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',padding:'12px 14px',fontSize:'12px',color:'#0369a1',lineHeight:'1.7',marginBottom:'12px'},[text]);
+  }
+  function warnBox(text) {
+    return div({background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'8px',padding:'12px 14px',fontSize:'12px',color:'#92400e',lineHeight:'1.7',marginBottom:'12px'},[text]);
+  }
+
+  var c = card([
+    h('h1',{style:{fontSize:'22px',fontWeight:'900',color:'#111827',marginBottom:'4px'}},['☁ Azure VM Optimizer']),
+    h('p',{style:{fontSize:'13px',color:'#6b7280',marginBottom:'24px',paddingBottom:'16px',borderBottom:'1px solid #e5e7eb'}},['Technical Documentation - How Calculations and Recommendations Work']),
+
+    // ── SECTION 1: PURPOSE ──
+    section('1. Purpose and Overview', [
+      para('The Azure VM Optimizer connects to your Azure environment using your own identity and collects 7 days of performance metrics for a selected Virtual Machine. It then runs those metrics through a scoring and recommendation engine to produce an Optimization Score and a prioritized list of actionable recommendations covering cost, performance, right-sizing, storage, and governance.'),
+      para('All processing happens entirely in your browser. No data is sent to any third party. Credentials and tokens are held only in browser memory and are lost when the page is closed or refreshed.')
+    ]),
+
+    // ── SECTION 2: METRICS ──
+    section('2. Metrics Collected', [
+      para('All metrics are pulled from the Azure Monitor Metrics API over a 7-day window at 1-hour intervals. The tool tries multiple metric name variants automatically because different VM series (e.g. Standard_D vs Standard_Dads_v5) expose metrics under slightly different names.'),
+      subhead('CPU Utilization'),
+      bullet([
+        'Metric: Percentage CPU',
+        'Aggregations collected: Average, Maximum, Minimum per hour',
+        'Derived values: 7-day average, 7-day maximum, 7-day minimum, 95th percentile (p95)',
+        'p95 is calculated by sorting all hourly average values and taking the value at the 95th position - this represents the CPU level the VM is at or below 95% of the time and is a better signal for right-sizing than the peak alone'
+      ]),
+      subhead('Memory Utilization'),
+      bullet([
+        'Metric: Available Memory Bytes',
+        'Memory used % = ((Total RAM bytes - Available bytes) / Total RAM bytes) x 100',
+        'Total RAM is taken from the VM size catalog (e.g. Standard_D8ads_v5 = 32 GB)',
+        'Important: This metric is only available natively on Windows VMs. Linux VMs require the Azure Monitor Agent with a Data Collection Rule (DCR) configured - without it the memory card shows N/A'
+      ]),
+      subhead('Disk I/O'),
+      bullet([
+        'OS Disk Read/Write Bytes per second (throughput in MB/s)',
+        'OS Disk Read/Write Operations per second (IOPS)',
+        'Data Disk Read/Write Bytes per second',
+        'Data Disk Read/Write Operations per second',
+        'Both average and peak (maximum) IOPS are captured to detect spiky workloads'
+      ]),
+      subhead('Network'),
+      bullet([
+        'Network In Total / Network In: total bytes received over 7 days',
+        'Network Out Total / Network Out: total bytes sent over 7 days',
+        'Converted from bytes to GB for display',
+        'Egress cost estimated at $0.087 per GB (West Europe PAYG rate - actual rate varies by region)'
+      ])
+    ]),
+
+    // ── SECTION 3: SCORING ──
+    section('3. Optimization Score Calculation', [
+      para('Every VM starts with a score of 100. Points are deducted based on detected issues. The final score is capped between 0 and 100.'),
+      tableEl(
+        ['Condition','Points Deducted','Severity'],
+        [
+          ['CPU average below 5% over 7 days','-35','Critical'],
+          ['CPU average below 20% AND peak below 60%','-20','High'],
+          ['CPU average above 85% OR peak above 95%','-25','Critical'],
+          ['CPU average between 70% and 85%','-10','Medium'],
+          ['Memory usage above 85%','-20','Critical'],
+          ['Memory usage below 20%','-10','Medium'],
+          ['OS disk peak IOPS above 5,000','-10','Medium'],
+          ['OS disk I/O negligible (under 1 IOPS and 0.1 MB/s)','-5','Low'],
+          ['One or more standard tags missing','-5','Low']
+        ]
+      ),
+      para('Score interpretation:'),
+      bullet([
+        '80 to 100 = Well Optimized (green) - VM is sized and configured appropriately',
+        '60 to 79 = Needs Attention (amber) - some improvements recommended',
+        '0 to 59 = Needs Work (red) - significant cost or performance issues detected'
+      ])
+    ]),
+
+    // ── SECTION 4: RIGHT-SIZING ──
+    section('4. Right-Sizing Logic', [
+      para('The right-sizing engine calculates a target vCPU count and target RAM size based on observed utilization, then searches the VM catalog for the smallest SKU that satisfies both targets.'),
+      subhead('Target vCPU calculation'),
+      bullet([
+        'If avg CPU is below 10%: target vCPU = floor(current vCPU / 2), minimum 1',
+        'If avg CPU is above 80%: target vCPU = current vCPU x 2',
+        'Otherwise: target vCPU = current vCPU (no change needed)'
+      ]),
+      subhead('Target RAM calculation'),
+      bullet([
+        'If memory usage is below 20%: target RAM = floor(current RAM / 2), minimum 1 GB',
+        'If memory usage is above 85%: target RAM = current RAM x 2',
+        'Otherwise: target RAM = current RAM (no change needed)',
+        'If memory data is unavailable (Linux without AMA): RAM target is unchanged'
+      ]),
+      subhead('SKU selection'),
+      para('The engine scans all SKUs in the catalog and finds the one with the smallest excess capacity above the target - calculated as (vCPU delta x 2) + RAM delta. This prioritizes reducing vCPU over RAM since vCPU has a larger cost impact per unit.'),
+      subhead('Savings calculation'),
+      para('Monthly cost is estimated at hourly rate x 730 hours. Savings percentage and monthly dollar saving are calculated as the difference between the current SKU cost and the recommended SKU cost at PAYG rates. These are estimates - actual savings depend on your region, reservation status, and Azure Hybrid Benefit.'),
+      infoBox2('Right-sizing is only recommended when the new SKU costs less than the current one. Upsizing recommendations (when performance is constrained) are shown as performance warnings only.')
+    ]),
+
+    // ── SECTION 5: RECOMMENDATIONS ──
+    section('5. Recommendation Categories and Logic', [
+      tableEl(
+        ['Category','Trigger','Recommended Action'],
+        [
+          ['Cost / Right-Sizing','CPU avg below 5%','Deallocate or downsize immediately'],
+          ['Cost / Right-Sizing','CPU avg below 20% and peak below 60%','Halve the vCPU allocation'],
+          ['Performance','CPU avg above 85% or peak above 95%','Scale up or enable Autoscale'],
+          ['Performance','CPU avg above 70%','Monitor and plan scale-up'],
+          ['Memory','Memory above 85%','Move to memory-optimized E-series SKU'],
+          ['Memory','Memory below 20%','Move to smaller RAM SKU'],
+          ['Storage','OS disk negligible I/O','Downgrade from Premium SSD to Standard SSD'],
+          ['Storage','OS disk peak IOPS above 5,000','Ensure Premium SSD or Ultra Disk'],
+          ['Storage','Data disk IOPS below 5 but has throughput','Move cold data to Standard HDD or SSD'],
+          ['Right-Sizing','Calculated target SKU is cheaper','Resize to recommended SKU'],
+          ['Cost','Always shown','Consider Reserved Instances (1 or 3 year)'],
+          ['Governance','Any non-prod VM','Enable auto-shutdown schedule'],
+          ['Governance','Missing Environment/Owner/CostCenter/Application tags','Add standard resource tags'],
+          ['Tooling','Always shown','Enable Azure Advisor for continuous monitoring']
+        ]
+      ),
+      subhead('Severity levels'),
+      bullet([
+        'Critical (red): Immediate action required - significant cost waste or performance risk',
+        'High (orange): Should be addressed in the current sprint or iteration',
+        'Medium (yellow): Address within the next planning cycle',
+        'Low (blue): Nice-to-have improvements with minor impact',
+        'Info (purple): Best practice suggestions with no score impact'
+      ])
+    ]),
+
+    // ── SECTION 6: VM CATALOG ──
+    section('6. VM Size Catalog and Cost Estimates', [
+      para('The tool includes a built-in catalog of common Azure VM sizes with estimated hourly costs at West Europe pay-as-you-go rates. When a VM size is not found in the catalog, a default of 2 vCPU / 8 GB RAM / $0.096/hr is assumed.'),
+      bullet([
+        'B-series (burstable): B1s, B2ms, B4ms, B8ms',
+        'D-series general purpose: D2s_v3 through D16s_v5, D2ads_v5 through D32ads_v5',
+        'E-series memory optimized: E2s_v3 through E16s_v3, E2ads_v5 through E16ads_v5',
+        'F-series compute optimized: F2s_v2 through F16s_v2'
+      ]),
+      warnBox('Cost estimates are approximations for planning purposes only. Always verify actual costs in Azure Cost Management before making infrastructure decisions. Costs vary by region, reservation, Azure Hybrid Benefit, and enterprise agreement discounts.')
+    ]),
+
+    // ── SECTION 7: AUTH ──
+    section('7. Authentication Methods', [
+      tableEl(
+        ['Method','How It Works','MFA Support','Requirements'],
+        [
+          ['Sign in with Microsoft (PKCE)','Browser redirects to Microsoft login and back with an auth code. The code is exchanged for a token server-side at Microsoft.','Yes - full MFA','App Registration with SPA redirect URI and user_impersonation permission'],
+          ['Paste Bearer Token','Token obtained via Azure CLI (az login handles MFA) and pasted manually.','Yes - MFA done in CLI','Azure CLI installed locally'],
+          ['Managed Identity','Token fetched from Azure IMDS endpoint automatically.','N/A - no login needed','Must run on Azure compute with MI assigned and Reader + Monitoring Reader roles']
+        ]
+      ),
+      para('The tool requires Reader role on the subscription to list resources and Monitoring Reader role to access Azure Monitor metrics. No write permissions are needed or requested.')
+    ]),
+
+    // ── SECTION 8: LIMITATIONS ──
+    section('8. Known Limitations', [
+      bullet([
+        'Memory metrics are unavailable for Linux VMs unless the Azure Monitor Agent is installed and a Data Collection Rule is configured',
+        'Metric names differ between VM series - the tool tries multiple naming conventions automatically but some newer VM series may not return all metrics',
+        'Cost estimates use West Europe PAYG rates and do not account for reservations, hybrid benefit, spot pricing, or enterprise agreements',
+        'The 7-day analysis window may not capture seasonal or monthly usage patterns - consider running the analysis during representative workload periods',
+        'Right-sizing recommendations do not account for memory-mapped files, page file usage, or application-level memory requirements on Windows VMs',
+        'Bearer tokens expire after approximately 1 hour - re-run az account get-access-token to refresh',
+        'The VM size catalog covers the most common SKUs - less common sizes fall back to default estimates'
+      ])
+    ])
+
+  ],{padding:'32px'});
+
+  body.appendChild(c);
   wrap.appendChild(hdr);wrap.appendChild(body);
   return wrap;
 }
